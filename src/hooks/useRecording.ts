@@ -1,6 +1,4 @@
 import { useState } from 'react';
-import { supabase } from '@/lib/supabase';
-import type { AudioRecording } from '@/lib/supabase';
 
 export function useRecording() {
   const [recording, setRecording] = useState<boolean>(false);

@@ -12,8 +12,7 @@ The Bantu Project is a web application designed to preserve and understand Afric
 - **State Management**: React Hooks
 - **API Communication**: Axios
 - **Authentication**: JWT-based authentication
-- **Database**: PostgreSQL (via Supabase)
-- **Storage**: Supabase Storage
+- **Database**: PostgreSQL 
 - **Icons**: Lucide React
 
 ## Project Structure
