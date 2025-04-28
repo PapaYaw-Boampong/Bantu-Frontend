@@ -2,7 +2,19 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronLeft, Save, Rocket, AlertCircle, CheckCircle, Plus, Trash2, GripVertical, Upload, X } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { EventType, TaskType, EventCategory, ChallengeStatus } from '@/types/challenge';
+import { 
+  EventType, 
+  TaskType, 
+  EventCategory, 
+  ChallengeStatus, 
+  ChallengeSaveRequest 
+} from '@/types/challenge';
+import { 
+  RewardType, 
+  DistributionMethod, 
+  RewardConfiguration, 
+  ChallengeRewardUpdate 
+} from '@/types/rewards';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -48,18 +60,14 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 
 // Import the hooks
-import { useCreateChallenge } from '@/hooks/challengeHooks/useCreateChallenge';
-import { useUpdateChallenge } from '@/hooks/challengeHooks/useUpdateChallenge';
+import { useSaveChallenge } from '@/hooks/challengeHooks/useSaveChallenge';
 import { useGetChallenge } from '@/hooks/challengeHooks/useGetChallenge';
 import { usePublishChallenge } from '@/hooks/challengeHooks/usePublishChallenge';
 import { useLanguages } from '@/hooks/languageHooks/useLanguages';
+import { useChallengeUpdate } from '@/hooks/challengeHooks/useChallengeUpdate';
 
 // Import the RewardsTab component and types
 import { RewardsTab} from '@/components/challenges/RewardsTab';
-import {
-  RewardType,
-  DistributionMethod, 
-  RewardConfiguration } from '@/types/rewards';
 
 // Define interfaces for Rule and Prize
 interface Rule {
@@ -91,13 +99,15 @@ export default function CreateChallenge() {
   const [publishDialogOpen, setPublishDialogOpen] = useState(false);
   
   // Use the appropriate hooks
-  const { mutateAsync: createChallenge, isPending: isCreating } = useCreateChallenge();
-  const { mutateAsync: updateChallenge, isPending: isUpdating } = useUpdateChallenge(id || '');
+  const { mutateAsync: saveChallenge, isPending: isSaving } = useSaveChallenge();
   const { data: challenge, isLoading: isLoadingChallenge } = useGetChallenge(id || '');
   const { mutateAsync: publishChallenge, isPending: isPublishing } = usePublishChallenge();
   const { data: languages = [], isLoading: loadingLanguages } = useLanguages();
   
-  const loading = isCreating || isUpdating || isLoadingChallenge || isPublishing || loadingLanguages;
+  // Optional: Use the challenge update hook to track real-time changes
+  const { refreshChallenge } = useChallengeUpdate(id || '');
+  
+  const loading = isSaving || isLoadingChallenge || isPublishing || loadingLanguages;
   
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [formData, setFormData] = useState({
@@ -143,33 +153,30 @@ export default function CreateChallenge() {
       let prizes: Prize[] = [];
       
       try {
-        // Access rules from challenge metadata or custom fields
-        const challengeRules = (challenge as any).rules || [];
-        if (challengeRules) {
-          rules = typeof challengeRules === 'string' 
-            ? JSON.parse(challengeRules) 
-            : challengeRules;
+        // Access rules from challenge directly
+        const challengeRules = challenge.rules || [];
+        if (Array.isArray(challengeRules) && challengeRules.length > 0) {
+          rules = challengeRules.map(rule => ({
+            id: rule.rule_id || crypto.randomUUID(),
+            title: rule.rule_title,
+            text: rule.rule_description
+          }));
+        } else if (typeof challengeRules === 'string') {
+          // If still stored as string, try to parse it
+          const parsedRules = JSON.parse(challengeRules);
+          rules = Array.isArray(parsedRules) ? parsedRules.map(rule => ({
+            id: rule.id || crypto.randomUUID(),
+            title: rule.rule_title || rule.title,
+            text: rule.rule_description || rule.text
+          })) : [];
         }
       } catch (e) {
-        // If parsing fails, create a single rule with the text
-        rules = [{ id: '1', title: (challenge as any).rules || '', text: '' }];
-      }
-      
-      try {
-        // Access prizes from challenge metadata or custom fields
-        const challengePrizes = (challenge as any).prizes || [];
-        if (challengePrizes) {
-          prizes = typeof challengePrizes === 'string' 
-            ? JSON.parse(challengePrizes) 
-            : challengePrizes;
-        }
-      } catch (e) {
-        // If parsing fails, create a single prize with the text
-        prizes = [{ id: '1', label: 'Prize', description: (challenge as any).prizes || '', amount: '', distribution_type: 'fixed' }];
+        console.error('Failed to parse challenge rules', e);
+        rules = [];
       }
       
       // Try to parse reward configuration if it exists
-      let rewardConfig: RewardConfiguration = {
+      let rewardConfig = {
         reward_type: RewardType.CASH,
         distribution_method: DistributionMethod.FIXED,
         amount: 0,
@@ -177,11 +184,13 @@ export default function CreateChallenge() {
       };
       
       try {
-        const challengeRewardConfig = (challenge as any).reward_configuration;
+        const challengeRewardConfig = challenge.reward_configuration;
         if (challengeRewardConfig) {
-          rewardConfig = typeof challengeRewardConfig === 'string'
-            ? JSON.parse(challengeRewardConfig)
-            : challengeRewardConfig;
+          if (typeof challengeRewardConfig === 'string') {
+            rewardConfig = JSON.parse(challengeRewardConfig);
+          } else {
+            rewardConfig = challengeRewardConfig;
+          }
         }
       } catch (e) {
         console.error('Failed to parse reward configuration', e);
@@ -195,8 +204,8 @@ export default function CreateChallenge() {
         event_category: challenge.event_category,
         start_date: new Date(challenge.start_date).toISOString().slice(0, 16),
         end_date: new Date(challenge.end_date).toISOString().slice(0, 16),
-        target_contribution_count: (challenge as any).target_contribution_count ? String((challenge as any).target_contribution_count) : '',
-        language_id: (challenge as any).language_id || '',
+        target_contribution_count: challenge.target_contribution_count ? String(challenge.target_contribution_count) : '',
+        language_id: challenge.language_id || '',
         rules,
         prizes,
         is_public: challenge.is_public !== undefined ? challenge.is_public : true,
@@ -510,7 +519,16 @@ export default function CreateChallenge() {
     }
     
     try {
-      const data = {
+      // Map the form rules to match the API expected format
+      const mappedRules = formData.rules.map(rule => ({
+        rule_id: rule.id,
+        rule_title: rule.title,
+        rule_description: rule.text,
+        is_required: true
+      }));
+
+      // Prepare challenge data for the API
+      const challengeData = {
         challenge_name: formData.challenge_name,
         language_id: formData.language_id,
         description: formData.description,
@@ -519,26 +537,70 @@ export default function CreateChallenge() {
         event_category: formData.event_category,
         start_date: formData.start_date,
         end_date: formData.end_date,
-        target_contribution_count: formData.target_contribution_count ? parseInt(formData.target_contribution_count) : undefined,
         is_public: formData.is_public,
-        rules: JSON.stringify(formData.rules),
-        prizes: JSON.stringify(formData.prizes),
-        reward_configuration: JSON.stringify(formData.reward_configuration),
+        target_contribution_count: formData.target_contribution_count ? parseInt(formData.target_contribution_count) : undefined,
+        // Include the ID if we're editing an existing challenge
+        ...(id && { id }),
       };
       
-      if (isEditing && id) {
-        await updateChallenge(data);
+      // Format reward data based on the reward configuration
+      let challengeReward: ChallengeRewardUpdate | undefined;
+      if (formData.reward_configuration) {
+        const rewardConfig = formData.reward_configuration;
+        
+        // Build reward value based on distribution method
+        let reward_value: {};
+        if (rewardConfig.distribution_method === DistributionMethod.TIERED && rewardConfig.tiers?.length) {
+          // Structure tiered rewards as JSON string
+          const tieredValue: Record<string, any> = {};
+          rewardConfig.tiers.forEach((tier, index) => {
+            tieredValue[`tier_${index + 1}`] = {
+              rank: tier.rank,
+              amount: tier.amount,
+              currency: rewardConfig.currency || 'USD'
+            };
+          });
+          reward_value = tieredValue;
+        } else {
+          // Structure fixed/percentage rewards as JSON string
+          const fixedValue = {
+            amount: rewardConfig.amount || 0,
+            currency: rewardConfig.currency || 'USD'
+          };
+          reward_value = fixedValue;
+        }
+        
+        // Create the challenge reward object
+        challengeReward = {
+          reward_type: rewardConfig.reward_type,
+          reward_distribution_type: rewardConfig.distribution_method,
+          reward_value: reward_value
+        };
+      }
+
+      // Prepare data structure to send to the backend
+      const dataToSave: ChallengeSaveRequest = {
+        challenge_data: challengeData,
+        challenge_rules: mappedRules,
+        ...(challengeReward && { challenge_reward: challengeReward })
+      };
+      
+      const result = await saveChallenge(dataToSave);
+      
+      if (isEditing) {
         toast({
           title: 'Success',
           description: 'Challenge saved as draft',
         });
+        // Refresh the challenge data after saving
+        refreshChallenge();
       } else {
-        const newChallenge = await createChallenge(data);
         toast({
           title: 'Success',
           description: 'Challenge created as draft',
         });
-        navigate(`/user/edit-challenge/${newChallenge.id}`);
+        // Navigate to edit page with the new challenge ID
+        navigate(`/user/edit-challenge/${result.id}`);
       }
     } catch (error) {
       console.error('Failed to save challenge:', error);
@@ -562,7 +624,16 @@ export default function CreateChallenge() {
     }
     
     try {
-      const data = {
+      // Map the form rules to match the API expected format
+      const mappedRules = formData.rules.map(rule => ({
+        rule_id: rule.id,
+        rule_title: rule.title,
+        rule_description: rule.text,
+        is_required: true
+      }));
+
+      // Prepare challenge data for the API
+      const challengeData = {
         challenge_name: formData.challenge_name,
         language_id: formData.language_id,
         description: formData.description,
@@ -571,27 +642,77 @@ export default function CreateChallenge() {
         event_category: formData.event_category,
         start_date: formData.start_date,
         end_date: formData.end_date,
-        target_contribution_count: formData.target_contribution_count ? parseInt(formData.target_contribution_count) : undefined,
         is_public: formData.is_public,
-        rules: JSON.stringify(formData.rules),
-        prizes: JSON.stringify(formData.prizes),
-        reward_configuration: JSON.stringify(formData.reward_configuration),
+        target_contribution_count: formData.target_contribution_count ? parseInt(formData.target_contribution_count) : undefined,
+        // Include the ID if we're editing an existing challenge
+        ...(id && { id }),
+      };
+      
+      // Format reward data based on the reward configuration
+      let challengeReward: ChallengeRewardUpdate | undefined;
+      if (formData.reward_configuration) {
+        const rewardConfig = formData.reward_configuration;
+        
+        // Build reward value based on distribution method
+        let reward_value: string;
+        if (rewardConfig.distribution_method === DistributionMethod.TIERED && rewardConfig.tiers?.length) {
+          // Structure tiered rewards as JSON string
+          const tieredValue: Record<string, any> = {};
+          rewardConfig.tiers.forEach((tier, index) => {
+            tieredValue[`tier_${index + 1}`] = {
+              rank: tier.rank,
+              amount: tier.amount,
+              currency: rewardConfig.currency || 'USD'
+            };
+          });
+          reward_value = JSON.stringify(tieredValue);
+        } else {
+          // Structure fixed/percentage rewards as JSON string
+          const fixedValue = {
+            amount: rewardConfig.amount || 0,
+            currency: rewardConfig.currency || 'USD'
+          };
+          reward_value = JSON.stringify(fixedValue);
+        }
+        
+        // Create the challenge reward object
+        challengeReward = {
+          reward_type: rewardConfig.reward_type,
+          reward_distribution_type: rewardConfig.distribution_method,
+          reward_value: reward_value
+        };
+      }
+
+      // Prepare data structure to send to the backend
+      const dataToSave: ChallengeSaveRequest = {
+        challenge_data: challengeData,
+        challenge_rules: mappedRules,
+        ...(challengeReward && { challenge_reward: challengeReward })
       };
       
       if (isEditing && id) {
-        await updateChallenge(data);
+        // First save any changes to the existing challenge
+        await saveChallenge(dataToSave);
+        // Then publish it
         await publishChallenge(id);
+        
         toast({
           title: 'Success',
           description: 'Challenge published successfully',
         });
+        // Refresh the challenge data
+        refreshChallenge();
       } else {
-        const newChallenge = await createChallenge(data);
+        // Create and save a new challenge first
+        const newChallenge = await saveChallenge(dataToSave);
+        // Then publish it
         await publishChallenge(newChallenge.id);
+        
         toast({
           title: 'Success',
           description: 'Challenge published successfully',
         });
+        // Navigate to the edit page with the new challenge ID
         navigate(`/user/edit-challenge/${newChallenge.id}`);
       }
       
@@ -742,6 +863,16 @@ export default function CreateChallenge() {
     // Update form data
     setFormData({ ...formData, [name]: value });
   };
+
+  // Fix the EventCategory SelectItems
+  // Later in the file find and replace these items...
+
+  const eventCategoryItems = (
+    <>
+      <SelectItem value={EventCategory.COMPETITION}>Competition</SelectItem>
+      <SelectItem value={EventCategory.BOUNTY}>Bounty</SelectItem>
+    </>
+  );
 
   return (
     <div className="min-h-screen bg-background">
@@ -1042,9 +1173,7 @@ export default function CreateChallenge() {
                             <SelectValue placeholder="Select category" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value={EventCategory.COMPETITION}>Competition</SelectItem>
-                            <SelectItem value={EventCategory.TRAINING}>Training</SelectItem>
-                            <SelectItem value={EventCategory.CROWDSOURCING}>Crowdsourcing</SelectItem>
+                            {eventCategoryItems}
                           </SelectContent>
                         </Select>
                       </div>

@@ -1,3 +1,5 @@
+import { ChallengeReward, ChallengeRewardUpdate } from "@/types/rewards";
+
 export enum EventType {
     DATA_COLLECTION = "data_collection",
     SAMPLE_REVIEW = "data_review"
@@ -11,10 +13,10 @@ export enum TaskType {
 }
 
 export enum EventCategory {
-  COMPETITION = 'competition',
-  TRAINING = 'training',
-  CROWDSOURCING = 'crowdsourcing',
+  COMPETITION = 'time_based_competition',
+  BOUNTY = 'bounty',
 }
+
 
 export enum ChallengeStatus {
   UPCOMING = 'upcoming',
@@ -44,6 +46,8 @@ export interface Challenge extends ChallengeCreate {
 }
 
 export interface ChallengeUpdate {
+  id?: string;
+  creator_id?: string;
   challenge_name?: string;
   language_id?: string;
   description?: string;
@@ -52,12 +56,30 @@ export interface ChallengeUpdate {
   event_category?: EventCategory;
   start_date?: string;
   end_date?: string;
-  status?: ChallengeStatus;
+  challenge_status?: ChallengeStatus;
   is_public?: boolean;
   is_published?: boolean;
+  target_contribution_count?: number;
+  challenge_reward_id?: string; // Reward is a separate object
 }
 
 
+
+export interface ChallengeSaveRequest {
+  challenge_data: ChallengeUpdate;
+  challenge_rules?: ChallengeRule[];
+  challenge_reward?: ChallengeRewardUpdate;
+}
+
+
+
+export interface RewardUpdate {
+  id?: string;
+  reward_type: string;
+  reward_value: number | string;
+  reward_distribution_type: string;
+  description?: string;
+}
 
 export interface ChallengeParticipant {
   user_id: string;
@@ -90,6 +112,10 @@ export interface ChallengeSummary {
 export interface ChallengeDetailResponse extends ChallengeSummary {
   reward: string;
   created_at: string;
+  rules?: ChallengeRule[];
+  reward_configuration?: any;
+  target_contribution_count?: number;
+  language_id: string;
 }
 
 
@@ -114,6 +140,7 @@ export interface UserChallengeFilter {
 }
 
 export interface ChallengeRule {
+  rule_id?: string;
   rule_title: string;
   rule_description: string;
   is_required: boolean;
@@ -123,7 +150,6 @@ export interface ChallengeRulesAdd {
   challenge_id: string;
   rules: ChallengeRule[];
 }
-
 
 
 // Define the expected shape of one leaderboard entry

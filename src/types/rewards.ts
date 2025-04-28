@@ -68,8 +68,10 @@ export enum RewardType {
   }
   
   export interface ChallengeRewardUpdate {
+    id?: string;
     reward_type?: RewardType;
-    reward_value?: string; // Can be a number, string or complex object depending on how it's handled in your system
+    reward_value?: string | Record<string, any>; 
+    reward_distribution_type?: DistributionMethod;
   }
   
   export interface GetRewardsQuery {
@@ -106,7 +108,9 @@ export interface RewardConfiguration {
   amount?: number;
   currency?: string;
   badge_name?: string;
+  badge_icon?: string;
   badge_description?: string;
+  coupon_code?: string;
   badge_image?: string;
   swag_item?: string;
   swag_description?: string;

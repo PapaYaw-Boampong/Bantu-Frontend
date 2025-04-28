@@ -10,6 +10,7 @@ import {
   ChallengeRulesAdd,
   GetChallenges,
   UserChallengeFilter,
+  ChallengeSaveRequest,
 } from '@/types/challenge';
 
 import { ChallengeStatus } from '@/types/challenge'; // if ChallengeStatus is exported separately
@@ -18,8 +19,8 @@ class ChallengeService {
   private baseUrl = '/challenges';
 
   // Create a new challenge
-  async create(data: ChallengeCreate): Promise<Challenge> {
-    const res = await api.post(`${this.baseUrl}/create`, data);
+  async save(data: ChallengeSaveRequest): Promise<Challenge> {
+    const res = await api.post(`${this.baseUrl}/save`, data);
     return res.data;
   }
 
@@ -30,7 +31,7 @@ class ChallengeService {
   }
 
   async listCreatedByUser(filters?: GetChallenges): Promise<ChallengeSummary[]> {
-    const res = await api.get(`${this.baseUrl}/my`, { params: filters });
+    const res = await api.get(`${this.baseUrl}/myChallenges`, { params: filters });
     return res.data;
   }
 
@@ -119,11 +120,11 @@ class ChallengeService {
     return res.data;
   }
 
-  // // (Optional) Get my active participations
-  // async getMyParticipations(): Promise<ChallengeParticipant[]> {
-  //   const res = await api.get(`${this.baseUrl}/my-participation`);
-  //   return res.data;
-  // }
+  // (Optional) Get my active participations
+  async getMyParticipations(): Promise<ChallengeParticipant[]> {
+    const res = await api.get(`${this.baseUrl}/my-participation`);
+    return res.data;
+  }
 }
 
 export const challengeService = new ChallengeService();
