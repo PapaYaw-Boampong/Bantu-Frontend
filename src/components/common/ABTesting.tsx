@@ -326,8 +326,9 @@ export default function ABTesting({
           </div>
         </div>
       </CardContent>
+  
       
-      <CardFooter className="flex flex-col sm:flex-row justify-between pt-6 gap-4">
+      <CardFooter className="flex flex-col sm:flex-row justify-between pt-10 gap-4">
         <Button
           variant={selected === 'same' ? 'default' : 'outline'}
           onClick={() => setSelected('same')}

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Edit, Trash2, Search, Plus, Filter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import {
   Dialog,
@@ -20,42 +21,56 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { EventType, Challenge } from '@/types/challenge';
+import { EventType, Challenge, ChallengeStatus, GetChallenges, TaskType } from '@/types/challenge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { format } from 'date-fns';
 import { useUserChallenges } from '@/hooks/challengeHooks/useUserChallenges';
+import { useGetCreatedChallenges } from '@/hooks/challengeHooks/useGetCreatedChallenges';
 import { useDeleteChallenge } from '@/hooks/challengeHooks/useDeleteChallenge';
+import { challengeService } from '@/services/challengeService';
+import { useQuery } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
+import { useLanguages } from '@/hooks/languageHooks/useLanguages';
+import { Language } from '@/types/language';
+import { useToast } from '@/hooks/use-toast';
 
 export default function YourWork() {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'upcoming' | 'completed'>('all');
   const [sortBy, setSortBy] = useState<'newest' | 'popular' | 'deadline'>('newest');
+  const [languageFilter, setLanguageFilter] = useState<string | null>(null);
+  const [taskTypeFilter, setTaskTypeFilter] = useState<TaskType | null>(null);
+  
+  const { data: languages = [], isLoading: isLoadingLanguages } = useLanguages();
 
-  const { data: challenges = [], isLoading } = useUserChallenges();
+  // Create filter parameters for the API
+  const filterParams: GetChallenges = {
+    // Map UI filter values to API status values
+    ...(activeFilter === 'active' && { status: 'active' as ChallengeStatus }),
+    ...(activeFilter === 'upcoming' && { status: 'upcoming' as ChallengeStatus }),
+    ...(activeFilter === 'completed' && { status: 'completed' as ChallengeStatus }),
+    ...(languageFilter && { language_id: languageFilter }),
+    ...(taskTypeFilter && { task_type: taskTypeFilter }),
+  };
+  console.log('Filter Params:', filterParams);
+
+  const { data: challenges = [], isLoading } = useGetCreatedChallenges(filterParams);
+  
   const deleteMutation = useDeleteChallenge();
+  const queryClient = useQueryClient();
 
   const filteredChallenges = challenges.filter(challenge => {
-    const matchesSearch = challenge.challenge_name
+    // Apply search filter client-side
+    return challenge.challenge_name
       .toLowerCase()
       .includes(searchQuery.toLowerCase());
-  
-    // 'all' means no status filter
-    if (activeFilter === 'all') return matchesSearch;
-
-    // Normalize both challenge status and activeFilter to lowercase for comparison
-    const challengeStatus = challenge.status.toLowerCase(); 
-    const filterStatus = activeFilter.toLowerCase(); // Normalize activeFilter to lowercase
-
-
-    // Match challenge.status (e.g., 'active', 'draft', 'ended') with selected filter
-    return matchesSearch && challengeStatus === filterStatus;
   });
   
-
   const sortedChallenges = [...filteredChallenges].sort((a, b) => {
-    if (sortBy === 'newest') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    if (sortBy === 'newest') return new Date(b.created_at || '').getTime() - new Date(a.created_at || '').getTime();
     if (sortBy === 'popular') return (b.participant_count || 0) - (a.participant_count || 0);
     if (sortBy === 'deadline') return new Date(a.end_date).getTime() - new Date(b.end_date).getTime();
     return 0;
@@ -72,8 +87,35 @@ export default function YourWork() {
     }
   };
 
+  const getTaskTypeLabel = (type: TaskType) => {
+    switch (type) {
+      case TaskType.TRANSCRIPTION:
+        return 'Transcription';
+      case TaskType.TRANSLATION:
+        return 'Translation';
+      case TaskType.ANNOTATION:
+        return 'Annotation';
+      default:
+        return 'Unknown';
+    }
+  };
+
   const handleCreateChallenge = () => navigate('/user/create-challenge');
-  const handleEditChallenge = (id: string) => navigate(`/user/edit-challenge/${id}`);
+  const handleEditChallenge = (id: string) => navigate(`/user/create-challenge?id=${id}`);
+  
+  const handleDeleteChallenge = (challenge: Challenge) => {
+    // Prevent deletion of published challenges that haven't ended yet
+    if (challenge.is_published && challenge.status === ChallengeStatus.Active) {
+      toast({
+        title: "Cannot Delete Challenge",
+        description: "Published challenges that are still active cannot be deleted.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    setConfirmDelete(challenge.id);
+  };
 
   return (
     <div className="container mx-auto py-8 px-4">
@@ -100,19 +142,57 @@ export default function YourWork() {
             />
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" className="gap-2">
                   <Filter className="h-4 w-4" />
-                  Filter
+                  Status: {activeFilter === 'all' ? 'All' : activeFilter.charAt(0).toUpperCase() + activeFilter.slice(1)}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={() => setActiveFilter('all')}>All Challenges</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setActiveFilter('active')}>Upcoming</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setActiveFilter('upcoming')}>Active Only</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setActiveFilter('completed')}>Ended Only</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setActiveFilter('active')}>Active Challenges</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setActiveFilter('upcoming')}>Upcoming Challenges</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setActiveFilter('completed')}>Completed Challenges</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="gap-2">
+                  Language: {languageFilter ? languages.find(l => l.id === languageFilter)?.name || 'Loading...' : 'All'}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setLanguageFilter(null)}>All Languages</DropdownMenuItem>
+                <DropdownMenuSeparator />
+                {isLoadingLanguages ? (
+                  <DropdownMenuItem disabled>Loading languages...</DropdownMenuItem>
+                ) : (
+                  languages.map((language: Language) => (
+                    <DropdownMenuItem key={language.id} onClick={() => setLanguageFilter(language.id)}>
+                      {language.name}
+                    </DropdownMenuItem>
+                  ))
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="gap-2">
+                  Task: {taskTypeFilter ? getTaskTypeLabel(taskTypeFilter) : 'All'}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setTaskTypeFilter(null)}>All Tasks</DropdownMenuItem>
+                <DropdownMenuSeparator />
+                {Object.values(TaskType).map((type) => (
+                  <DropdownMenuItem key={type} onClick={() => setTaskTypeFilter(type)}>
+                    {getTaskTypeLabel(type)}
+                  </DropdownMenuItem>
+                ))}
               </DropdownMenuContent>
             </DropdownMenu>
 
@@ -156,11 +236,23 @@ export default function YourWork() {
                 {sortedChallenges.map((challenge) => (
                   <Card key={challenge.id} className="overflow-hidden">
                     <div className="h-3 bg-primary w-full" />
+                    <div className="relative h-48 w-full">
+                      <img 
+                        src={challenge.image_url} 
+                        alt={challenge.challenge_name}
+                        className="w-full h-full object-cover"
+                      />
+                      {challenge.is_published && (
+                        <div className="absolute top-2 right-2">
+                          <Badge className="bg-green-600">Published</Badge>
+                        </div>
+                      )}
+                    </div>
                     <CardContent className="p-6">
                       <div className="flex justify-between items-start mb-4">
                         <div>
                           <h3 className="font-semibold text-lg line-clamp-1">{challenge.challenge_name}</h3>
-                          <p className="text-sm text-muted-foreground mt-1">{getEventTypeLabel(challenge.event_type)}</p>
+                          <p className="text-sm text-muted-foreground mt-1">{getEventTypeLabel(challenge.event_type)} • {getTaskTypeLabel(challenge.task_type)}</p>
                         </div>
                         <Badge variant={challenge.status ? "default" : "secondary"}>
                           {challenge.status? "Active" : "Ended"}
@@ -189,49 +281,72 @@ export default function YourWork() {
                         <Edit className="mr-2 h-4 w-4" />
                         Edit
                       </Button>
-                      <Dialog open={confirmDelete === challenge.id} onOpenChange={(open) => !open && setConfirmDelete(null)}>
-                        <DialogTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="w-[48%] text-destructive hover:text-destructive"
-                            onClick={() => setConfirmDelete(challenge.id)}
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Delete
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>Are you sure you want to delete this challenge?</DialogTitle>
-                            <DialogDescription>
-                              This action cannot be undone. This will permanently delete the challenge and all associated data.
-                            </DialogDescription>
-                          </DialogHeader>
-                          <DialogFooter>
-                            <Button variant="outline" onClick={() => setConfirmDelete(null)}>
-                              Cancel
-                            </Button>
-                            <Button
-                              variant="destructive"
-                              onClick={() => {
-                                deleteMutation.mutate(challenge.id);
-                                setConfirmDelete(null);
-                              }}
-                            >
-                              Delete
-                            </Button>
-                          </DialogFooter>
-                        </DialogContent>
-                      </Dialog>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-[48%] text-destructive hover:text-destructive"
+                        onClick={() => handleDeleteChallenge(challenge)}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete
+                      </Button>
                     </CardFooter>
                   </Card>
                 ))}
               </div>
             )}
           </TabsContent>
+
+          <TabsContent value="list" className="w-full">
+            <div className="text-center py-8">
+              <p>Switch to Grid View for a more visual experience</p>
+            </div>
+          </TabsContent>
         </Tabs>
       </div>
+
+      <Dialog open={!!confirmDelete} onOpenChange={(open) => !open && setConfirmDelete(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Challenge</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this challenge? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmDelete(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (confirmDelete) {
+                  deleteMutation.mutate(confirmDelete, {
+                    onSuccess: () => {
+                      toast({
+                        title: "Challenge Deleted",
+                        description: "Your challenge has been permanently deleted.",
+                      });
+                      setConfirmDelete(null);
+                      queryClient.invalidateQueries({ queryKey: ['created-challenges'] });
+                    },
+                    onError: (error) => {
+                      toast({
+                        title: "Error",
+                        description: "Failed to delete challenge. Please try again.",
+                        variant: "destructive",
+                      });
+                      setConfirmDelete(null);
+                    },
+                  });
+                }
+              }}
+            >
+              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

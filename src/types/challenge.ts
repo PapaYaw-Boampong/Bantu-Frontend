@@ -20,7 +20,7 @@ export enum EventCategory {
 
 export enum ChallengeStatus {
   UPCOMING = 'upcoming',
-  ONGOING = 'ongoing',
+  Active = 'active',
   COMPLETED = 'completed',
 }
 
@@ -43,6 +43,8 @@ export interface Challenge extends ChallengeCreate {
   challenge_reward?: string;
   participant_count?: number;
   completion_percent?: number;
+  created_at?: string;
+  image_url?: string;
 }
 
 export interface ChallengeUpdate {
@@ -107,6 +109,7 @@ export interface ChallengeSummary {
   is_published: boolean;
   participant_count?: number;
   created_at: string;
+  image_url?: string;
 }
 
 export interface ChallengeDetailResponse extends ChallengeSummary {
@@ -116,6 +119,7 @@ export interface ChallengeDetailResponse extends ChallengeSummary {
   reward_configuration?: any;
   target_contribution_count?: number;
   language_id: string;
+  challenge_reward_id?: string;
 }
 
 

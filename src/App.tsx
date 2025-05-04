@@ -57,6 +57,7 @@ function App() {
           {/* Public routes */}
           <Route path="/" element={<Welcome />} />
           <Route path="/auth" element={<Auth />} />
+          <Route path="/login" element={<Auth />} />
 
           {/* Protected routes with shared layout */}
           <Route
@@ -88,7 +89,6 @@ function App() {
             <Route path="user/challenge/:id" element={<ChallengeDetail />} />
             <Route path="user/work" element={<UserWork />} />
             <Route path="user/create-challenge" element={<CreateChallenge />} />
-            <Route path="user/edit-challenge/:id" element={<CreateChallenge />} />
             <Route path="user/sandbox" element={<Sandbox />} />
             <Route path="user/abtesting" element={<ABTesting />} />
 

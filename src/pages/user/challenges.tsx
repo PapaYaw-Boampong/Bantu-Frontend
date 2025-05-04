@@ -12,20 +12,41 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
-import { EventType, Challenge } from '@/types/challenge';
+import { EventType, TaskType, Challenge, GetChallenges } from '@/types/challenge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { format } from 'date-fns';
+import { useLanguages } from '@/hooks/languageHooks/useLanguages';
+import { Language } from '@/types/language';
 
 export default function PublicChallenges() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { data: challenges = [], isLoading: loading } = useChallenges();
-
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<EventType | 'all'>('all');
   const [sortBy, setSortBy] = useState<'newest' | 'popular' | 'ending-soon'>('newest');
   const [joinedChallenges, setJoinedChallenges] = useState<string[]>([]);
+  const [languageFilter, setLanguageFilter] = useState<string | null>(null);
+  const [taskTypeFilter, setTaskTypeFilter] = useState<TaskType | null>(null);
+  
+  const { data: languages = [], isLoading: isLoadingLanguages } = useLanguages();
+  
+  // Create filter parameters for the API
+  const filterParams: GetChallenges = {
+    // Only get published challenges
+    is_published: true,
+    // Only get public challenges
+    is_public: true,
+    // Apply event type filter if not "all"
+    ...(typeFilter !== 'all' && { event_type: typeFilter }),
+    // Apply language filter if selected
+    ...(languageFilter && { language_id: languageFilter }),
+    // Apply task type filter if selected
+    ...(taskTypeFilter && { task_type: taskTypeFilter }),
+  };
+  
+  const { data: challenges = [], isLoading: loading } = useChallenges(filterParams);
   
   useEffect(() => {
     const mockJoinedChallenges = localStorage.getItem('joinedChallenges');
@@ -34,16 +55,13 @@ export default function PublicChallenges() {
     }
   }, []);
   
-  // Filter challenges based on search and type filter
+  // Apply client-side search filtering
   const filteredChallenges = challenges.filter(challenge => {
-    const matchesSearch = challenge.challenge_name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                         (challenge.description && challenge.description.toLowerCase().includes(searchQuery.toLowerCase()));
-    
-    if (typeFilter === 'all') return matchesSearch;
-    return matchesSearch && challenge.event_type === typeFilter;
+    return challenge.challenge_name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+           (challenge.description && challenge.description.toLowerCase().includes(searchQuery.toLowerCase()));
   });
 
-  // Sort challenges
+  // Sort challenges client-side
   const sortedChallenges = [...filteredChallenges].sort((a, b) => {
     if (sortBy === 'newest') {
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
@@ -60,36 +78,26 @@ export default function PublicChallenges() {
   const getEventTypeLabel = (type: EventType) => {
     switch (type) {
       case EventType.SAMPLE_REVIEW:
-        return 'Evalution';
+        return 'Evaluation';
       case EventType.DATA_COLLECTION:
         return 'Data Collection';
       default:
         return 'Unknown';
     }
   };
-
-  // const handleJoinChallenge = (challenge: Challenge) => {
-  //   // In a real app, call an API to join the challenge
-  //   if (joinedChallenges.includes(challenge.id)) {
-  //     const updated = joinedChallenges.filter(id => id !== challenge.id);
-  //     setJoinedChallenges(updated);
-  //     localStorage.setItem('joinedChallenges', JSON.stringify(updated));
-      
-  //     toast({
-  //       title: 'Left Challenge',
-  //       description: `You have left "${challenge.challenge_name}"`,
-  //     });
-  //   } else {
-  //     const updated = [...joinedChallenges, challenge.id];
-  //     setJoinedChallenges(updated);
-  //     localStorage.setItem('joinedChallenges', JSON.stringify(updated));
-      
-  //     toast({
-  //       title: 'Joined Challenge',
-  //       description: `You have joined "${challenge.challenge_name}"`,
-  //     });
-  //   }
-  // };
+  
+  const getTaskTypeLabel = (type: TaskType) => {
+    switch (type) {
+      case TaskType.TRANSCRIPTION:
+        return 'Transcription';
+      case TaskType.TRANSLATION:
+        return 'Translation';
+      case TaskType.ANNOTATION:
+        return 'Annotation';
+      default:
+        return 'Unknown';
+    }
+  };
 
   const handleViewChallenge = (challengeId: string) => {
     navigate(`/user/challenge/${challengeId}`);
@@ -114,18 +122,56 @@ export default function PublicChallenges() {
             />
           </div>
           
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" className="gap-2">
                   <Filter className="h-4 w-4" />
-                  {typeFilter === 'all' ? 'All Types' : getEventTypeLabel(typeFilter as EventType)}
+                  Type: {typeFilter === 'all' ? 'All Types' : getEventTypeLabel(typeFilter as EventType)}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={() => setTypeFilter('all')}>All Types</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setTypeFilter(EventType.DATA_COLLECTION)}>Data_COLLECTION</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setTypeFilter(EventType.SAMPLE_REVIEW)}>Sample Evalution </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setTypeFilter(EventType.DATA_COLLECTION)}>Data Collection</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setTypeFilter(EventType.SAMPLE_REVIEW)}>Sample Review</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="gap-2">
+                  Language: {languageFilter ? languages.find(l => l.id === languageFilter)?.name || 'Loading...' : 'All'}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setLanguageFilter(null)}>All Languages</DropdownMenuItem>
+                <DropdownMenuSeparator />
+                {isLoadingLanguages ? (
+                  <DropdownMenuItem disabled>Loading languages...</DropdownMenuItem>
+                ) : (
+                  languages.map((language: Language) => (
+                    <DropdownMenuItem key={language.id} onClick={() => setLanguageFilter(language.id)}>
+                      {language.name}
+                    </DropdownMenuItem>
+                  ))
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="gap-2">
+                  Task: {taskTypeFilter ? getTaskTypeLabel(taskTypeFilter) : 'All'}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setTaskTypeFilter(null)}>All Tasks</DropdownMenuItem>
+                <DropdownMenuSeparator />
+                {Object.values(TaskType).map((type) => (
+                  <DropdownMenuItem key={type} onClick={() => setTaskTypeFilter(type)}>
+                    {getTaskTypeLabel(type)}
+                  </DropdownMenuItem>
+                ))}
               </DropdownMenuContent>
             </DropdownMenu>
 
@@ -165,11 +211,23 @@ export default function PublicChallenges() {
                 {sortedChallenges.map((challenge) => (
                   <Card key={challenge.id} className="overflow-hidden flex flex-col">
                     <div className="h-2 bg-primary w-full" />
+                    <div className="relative h-48 w-full">
+                      <img 
+                        src={challenge.image_url} 
+                        alt={challenge.challenge_name}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
                     <CardContent className="p-6 flex-grow">
                       <div className="flex justify-between items-start mb-4">
-                        <Badge variant="outline">
-                          {getEventTypeLabel(challenge.event_type)}
-                        </Badge>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Badge variant="outline">
+                            {getEventTypeLabel(challenge.event_type)}
+                          </Badge>
+                          <Badge variant="outline" className="bg-muted/60">
+                            {getTaskTypeLabel(challenge.task_type)}
+                          </Badge>
+                        </div>
                         <div className="flex items-center gap-1 text-sm text-muted-foreground">
                           <Users className="h-4 w-4" />
                           <span>{challenge.participant_count || 0}</span>
@@ -196,24 +254,6 @@ export default function PublicChallenges() {
                         View Details
                         <ArrowRight className="h-4 w-4" />
                       </Button>
-                      {/* <Button 
-                        variant={joinedChallenges.includes(challenge.id) ? "default" : "outline"}
-                        size="sm"
-                        className="gap-2"
-                        onClick={() => handleJoinChallenge(challenge)}
-                      >
-                        {joinedChallenges.includes(challenge.id) ? (
-                          <>
-                            <BookmarkCheck className="h-4 w-4" />
-                            Joined
-                          </>
-                        ) : (
-                          <>
-                            <Bookmark className="h-4 w-4" />
-                            Join
-                          </>
-                        )}
-                      </Button> */}
                     </CardFooter>
                   </Card>
                 ))}
@@ -255,14 +295,6 @@ export default function PublicChallenges() {
                           <span className="text-xs text-muted-foreground">Participants</span>
                         </div>
                         
-                        {/* <div className="flex flex-col items-center">
-                          <div className="flex items-center gap-1 text-sm">
-                            <Trophy className="h-4 w-4" />
-                            <span>{challenge.contribution_count || 0}</span>
-                          </div>
-                          <span className="text-xs text-muted-foreground">Contributions</span>
-                        </div>
-                         */}
                         <div className="flex items-center gap-2">
                           <Button 
                             variant="ghost" 
@@ -272,24 +304,6 @@ export default function PublicChallenges() {
                           >
                             Details
                           </Button>
-                          {/* <Button 
-                            variant={joinedChallenges.includes(challenge.id) ? "default" : "outline"}
-                            size="sm"
-                            className="gap-1 min-w-[80px]"
-                            onClick={() => handleJoinChallenge(challenge)}
-                          >
-                            {joinedChallenges.includes(challenge.id) ? (
-                              <>
-                                <BookmarkCheck className="h-4 w-4" />
-                                Joined
-                              </>
-                            ) : (
-                              <>
-                                <Bookmark className="h-4 w-4" />
-                                Join
-                              </>
-                            )}
-                          </Button> */}
                         </div>
                       </div>
                     </div>

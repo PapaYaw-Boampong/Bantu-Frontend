@@ -43,7 +43,7 @@ export default function Translate() {
 
   const handleGenerateText = () => {
     // Simulating LM text generation
-    setGeneratedText('Me p3 Sika');
+    setGeneratedText('I love Ashesi University!');
   };
 
   const handleRecord = () => {
@@ -148,7 +148,7 @@ export default function Translate() {
                   variant="outline"
                 >
                   <Bot className="h-6 w-6 mr-2" />
-                  Generate Text to Speak
+                  Generate to translate
                 </Button>
                 {generatedText && (
                   <div className="bg-muted p-4 rounded-lg">
@@ -170,7 +170,7 @@ export default function Translate() {
                     placeholder={
                       (inputMode as string) === 'lm'
                         ? 'Correct any transcription errors...'
-                        : 'Native Text Goes Here'
+                        : 'English Text Goes Here...'
                     }
                     value={transcription}
                     onChange={(e) => setTranscription(e.target.value)}
@@ -210,7 +210,7 @@ export default function Translate() {
                 <Label htmlFor="translation">Translation</Label>
                 <Textarea
                   id="translation"
-                  placeholder="Provide an English translation..."
+                  placeholder="Provide an African Language translation..."
                   value={translation}
                   onChange={(e) => setTranslation(e.target.value)}
                   className="h-32  mt-5"

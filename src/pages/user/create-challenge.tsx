@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useState, useEffect, useCallback } from 'react';
+import { useNavigate, useSearchParams, useBeforeUnload } from 'react-router-dom';
 import { ChevronLeft, Save, Rocket, AlertCircle, CheckCircle, Plus, Trash2, GripVertical, Upload, X } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
+import { useToast } from '@/components/ui/use-toast';
 import { 
   EventType, 
   TaskType, 
@@ -61,53 +61,59 @@ import { Separator } from "@/components/ui/separator";
 
 // Import the hooks
 import { useSaveChallenge } from '@/hooks/challengeHooks/useSaveChallenge';
-import { useGetChallenge } from '@/hooks/challengeHooks/useGetChallenge';
+import { useGetDetailedChallenge } from '@/hooks/challengeHooks/useGetDetailedChallenge';
 import { usePublishChallenge } from '@/hooks/challengeHooks/usePublishChallenge';
 import { useLanguages } from '@/hooks/languageHooks/useLanguages';
 import { useChallengeUpdate } from '@/hooks/challengeHooks/useChallengeUpdate';
+import { useRemoveRule } from '@/hooks/challengeHooks/useRemoveRule';
+import { useQueryClient } from '@tanstack/react-query';
 
 // Import the RewardsTab component and types
-import { RewardsTab} from '@/components/challenges/RewardsTab';
+import { RewardsTab, parseRewardFromAPI, serializeRewardForAPI } from '@/components/challenges/RewardsTab';
 
 // Define interfaces for Rule and Prize
 interface Rule {
-  id: string;
+  id?: string;
   title: string;
   text: string;
 }
 
-interface Prize {
-  id: string;
-  label: string;
-  description: string;
-  amount: string;
-  distribution_type: 'fixed' | 'percentage' | 'bounty';
+interface addRule{
+  title: string;
+  text: string;
 }
 
 // Item types for drag and drop
 const ItemTypes = {
   RULE: 'rule',
-  CRITERION: 'criterion',
-  PRIZE: 'prize',
 };
 
 export default function CreateChallenge() {
   const navigate = useNavigate();
-  const { id } = useParams();
-  const isEditing = !!id;
+  const [searchParams] = useSearchParams();
+  const queryClient = useQueryClient();
+  
+  // Instead of using URL params, get from query string if editing
+  const challengeId = searchParams.get('id');
+  const isEditing = !!challengeId;
+
   const { toast } = useToast();
   const [publishDialogOpen, setPublishDialogOpen] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [showUnsavedChangesDialog, setShowUnsavedChangesDialog] = useState(false);
+  const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
   
   // Use the appropriate hooks
   const { mutateAsync: saveChallenge, isPending: isSaving } = useSaveChallenge();
-  const { data: challenge, isLoading: isLoadingChallenge } = useGetChallenge(id || '');
+  const { data: challenge, isLoading: isLoadingChallenge } = useGetDetailedChallenge(challengeId || '');
   const { mutateAsync: publishChallenge, isPending: isPublishing } = usePublishChallenge();
   const { data: languages = [], isLoading: loadingLanguages } = useLanguages();
+  const { mutateAsync: removeRuleApi, isPending: isRemovingRule } = useRemoveRule();
   
   // Optional: Use the challenge update hook to track real-time changes
-  const { refreshChallenge } = useChallengeUpdate(id || '');
+  const { refreshChallenge } = useChallengeUpdate(challengeId || '');
   
-  const loading = isSaving || isLoadingChallenge || isPublishing || loadingLanguages;
+  const loading = isSaving || isLoadingChallenge || isPublishing || loadingLanguages || isRemovingRule;
   
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [formData, setFormData] = useState({
@@ -121,7 +127,6 @@ export default function CreateChallenge() {
     target_contribution_count: '',
     language_id: '',
     rules: [] as Rule[],
-    prizes: [] as Prize[],
     is_public: true,
     reward_configuration: {
       reward_type: RewardType.CASH,
@@ -136,83 +141,175 @@ export default function CreateChallenge() {
     title: '', 
     text: '' 
   });
-  const [newPrize, setNewPrize] = useState({ 
-    label: '', 
-    description: '', 
-    amount: '', 
-    distribution_type: 'fixed' as 'fixed' | 'percentage' | 'bounty'
-  });
 
   const [challengeImage, setChallengeImage] = useState<File | null>(null);
+
+  
   const [imagePreview, setImagePreview] = useState<string>('');
 
+  const toDatetimeLocal = (dateString: string) => {
+    if (!dateString) return '';
+    
+    try {
+      // Parse the date string and ensure it's valid
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) {
+        console.error('Invalid date string:', dateString);
+        return '';
+      }
+      
+      // Get the timezone offset in minutes
+      const offset = date.getTimezoneOffset();
+      
+      // Create a new date adjusted for the timezone
+      const localDate = new Date(date.getTime() - offset * 60000);
+      
+      // Return the date in the format expected by datetime-local input
+      return localDate.toISOString().slice(0, 16);
+    } catch (error) {
+      console.error('Error converting date:', error);
+      return '';
+    }
+  };
+  
+
   useEffect(() => {
-    if (isEditing && id && challenge) {
+    console.log('useEffect running, isEditing:', isEditing, 'challengeId:', challengeId);
+    console.log('Challenge data received:', challenge);
+    
+    if (isEditing && challengeId && challenge) {
+      // The API returns a structure where the challenge data might be nested
+      // Extract the actual challenge data
+      const challengeData = (challenge as any).challenge || challenge;
+      console.log('Using challenge data:', challengeData);
+      
       // Parse structured data from challenge if available
       let rules: Rule[] = [];
-      let prizes: Prize[] = [];
       
       try {
-        // Access rules from challenge directly
-        const challengeRules = challenge.rules || [];
-        if (Array.isArray(challengeRules) && challengeRules.length > 0) {
-          rules = challengeRules.map(rule => ({
-            id: rule.rule_id || crypto.randomUUID(),
-            title: rule.rule_title,
-            text: rule.rule_description
-          }));
-        } else if (typeof challengeRules === 'string') {
-          // If still stored as string, try to parse it
-          const parsedRules = JSON.parse(challengeRules);
-          rules = Array.isArray(parsedRules) ? parsedRules.map(rule => ({
-            id: rule.id || crypto.randomUUID(),
-            title: rule.rule_title || rule.title,
-            text: rule.rule_description || rule.text
-          })) : [];
+        // The API might return the rules in different formats
+        // 1. As challenge.rules for direct API response
+        // 2. As challenge.parsedRules for cached response
+        // 3. Nested inside challenge as challenge.rules
+        let challengeRules = [];
+        
+        if (Array.isArray(challenge.rules)) {
+          // Format from direct API response: {challenge, reward, rules}
+          challengeRules = challenge.rules;
+          console.log('Using rules array from direct API response:', challengeRules);
+        } else if (challenge.parsedRules && Array.isArray(challenge.parsedRules)) {
+          // Format from cache when previously processed
+          challengeRules = challenge.parsedRules;
+          console.log('Using parsedRules array from cache:', challengeRules);
+        } else if (typeof challenge.rules === 'string') {
+          // Rules might be a JSON string
+          try {
+            challengeRules = JSON.parse(challenge.rules);
+            console.log('Parsed rules from string:', challengeRules);
+          } catch (e) {
+            console.error('Failed to parse rules string:', e);
+          }
         }
+        
+        console.log('Challenge rules to process:', challengeRules);
+        
+        if (Array.isArray(challengeRules) && challengeRules.length > 0) {
+          rules = challengeRules.map(rule => {
+            // Ensure each rule has an ID for proper tracking
+            const ruleId = rule.id || rule.rule_id || `server_rule_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+            
+            return {
+              id: ruleId,
+              title: rule.rule_title,
+              text: rule.rule_description
+            };
+          });
+        }
+        
+        console.log('Processed rules:', rules);
       } catch (e) {
         console.error('Failed to parse challenge rules', e);
         rules = [];
       }
       
       // Try to parse reward configuration if it exists
-      let rewardConfig = {
+      let rewardConfig: RewardConfiguration = {
         reward_type: RewardType.CASH,
         distribution_method: DistributionMethod.FIXED,
         amount: 0,
-        currency: 'USD',
+        currency: 'USD'
       };
       
       try {
-        const challengeRewardConfig = challenge.reward_configuration;
-        if (challengeRewardConfig) {
-          if (typeof challengeRewardConfig === 'string') {
-            rewardConfig = JSON.parse(challengeRewardConfig);
-          } else {
-            rewardConfig = challengeRewardConfig;
+        // The API might return the reward in different formats
+        // 1. As challenge.reward for direct API response
+        // 2. As challenge.parsedReward for cached response
+        let rewardData = null;
+        
+        if (challenge.reward && typeof challenge.reward === 'object' && !Array.isArray(challenge.reward)) {
+          // Direct API response format
+          rewardData = challenge.reward;
+          console.log('Using reward from direct API response:', rewardData);
+        } else if (challenge.parsedReward) {
+          // Format from cache when previously processed
+          rewardData = challenge.parsedReward;
+          console.log('Using parsedReward from cache:', rewardData);
+        } else if (typeof challenge.reward === 'string') {
+          // Reward might be a JSON string
+          try {
+            rewardData = JSON.parse(challenge.reward);
+            console.log('Parsed reward from string:', rewardData);
+          } catch (e) {
+            console.error('Failed to parse reward string:', e);
           }
+        } else if (challenge.reward_configuration) {
+          // Might be stored in reward_configuration
+          rewardData = typeof challenge.reward_configuration === 'string' 
+            ? JSON.parse(challenge.reward_configuration) 
+            : challenge.reward_configuration;
+          console.log('Using reward_configuration:', rewardData);
+        }
+        
+        console.log('Reward data to process:', rewardData);
+        
+        if (rewardData) {
+          // Use the parseRewardFromAPI utility function to parse the reward data
+          rewardConfig = parseRewardFromAPI(rewardData);
+          console.log('Processed reward config:', rewardConfig);
         }
       } catch (e) {
         console.error('Failed to parse reward configuration', e);
       }
       
-      setFormData({
-        challenge_name: challenge.challenge_name,
-        description: challenge.description || '',
-        event_type: challenge.event_type,
-        task_type: challenge.task_type,
-        event_category: challenge.event_category,
-        start_date: new Date(challenge.start_date).toISOString().slice(0, 16),
-        end_date: new Date(challenge.end_date).toISOString().slice(0, 16),
-        target_contribution_count: challenge.target_contribution_count ? String(challenge.target_contribution_count) : '',
-        language_id: challenge.language_id || '',
+      // Format dates for the form
+      const startDate = challengeData.start_date ? toDatetimeLocal(challengeData.start_date) : '';
+      const endDate = challengeData.end_date ? toDatetimeLocal(challengeData.end_date) : '';
+      
+      console.log('Converted dates - start:', startDate, 'end:', endDate);
+      console.log('Original dates - start:', challengeData.start_date, 'end:', challengeData.end_date);
+      
+      // Safely set the form data with proper date handling
+      const updatedFormData = {
+        challenge_name: challengeData.challenge_name,
+        description: challengeData.description || '',
+        event_type: challengeData.event_type,
+        task_type: challengeData.task_type,
+        event_category: challengeData.event_category,
+        start_date: startDate,
+        end_date: endDate,
+        target_contribution_count: challengeData.target_contribution_count ? String(challengeData.target_contribution_count) : '',
+        language_id: challengeData.language_id || '',
         rules,
-        prizes,
-        is_public: challenge.is_public !== undefined ? challenge.is_public : true,
+        is_public: challengeData.is_public !== undefined ? challengeData.is_public : true,
         reward_configuration: rewardConfig,
-      });
+      };
+      
+      console.log('Setting form data to:', updatedFormData);
+      setFormData(updatedFormData);
     }
-  }, [id, isEditing, challenge]);
+    // At the end, reset unsaved changes flag since we're loading fresh data
+    setHasUnsavedChanges(false);
+  }, [challengeId, isEditing, challenge]);
 
   const validateForm = () => {
     const errors: Record<string, string> = {};
@@ -294,9 +391,52 @@ export default function CreateChallenge() {
     return Object.keys(errors).length === 0;
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  // Handle unsaved changes warning when navigating away
+  useBeforeUnload((event) => {
+    if (hasUnsavedChanges) {
+      event.preventDefault();
+      return 'You have unsaved changes. Are you sure you want to leave?';
+    }
+  });
+
+  // Handle back button navigation safely
+  const handleBackNavigation = useCallback(() => {
+    if (hasUnsavedChanges) {
+      setPendingNavigation('-1'); // Store where we want to navigate
+      setShowUnsavedChangesDialog(true); // Show confirmation dialog
+    } else {
+      navigate(-1);
+    }
+  }, [hasUnsavedChanges, navigate]);
+
+  // Custom navigation handler for any link
+  const handleNavigate = useCallback((to: string) => {
+    if (hasUnsavedChanges) {
+      setPendingNavigation(to);
+      setShowUnsavedChangesDialog(true);
+    } else {
+      navigate(to);
+    }
+  }, [hasUnsavedChanges, navigate]);
+
+  // Function to confirm navigation after saving or discarding changes
+  const confirmNavigation = useCallback(() => {
+    setShowUnsavedChangesDialog(false);
+    if (pendingNavigation === '-1') {
+      navigate(-1);
+    } else if (pendingNavigation) {
+      navigate(pendingNavigation);
+    }
+    setPendingNavigation(null);
+  }, [navigate, pendingNavigation]);
+
+  // Mark form as having unsaved changes when inputs change
+  const handleInputChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement> | { target: { name: string; value: string | boolean | EventType | TaskType | EventCategory } }
+  ) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+    setHasUnsavedChanges(true);
     
     // Clear error when user types
     if (formErrors[name]) {
@@ -308,8 +448,9 @@ export default function CreateChallenge() {
     }
   };
 
-  const handleSelectChange = (name: string, value: string) => {
-    setFormData(prev => ({ ...prev, [name]: value }));
+  // Helper function for direct value changes
+  const handleDirectChange = (name: string, value: string | boolean | EventType | TaskType | EventCategory) => {
+    handleInputChange({ target: { name, value } });
   };
 
   // Functions to handle structured data
@@ -323,52 +464,73 @@ export default function CreateChallenge() {
       return;
     }
     
+    // Generate a temporary unique ID for new rules
+    const tempId = `temp_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    
     const rule: Rule = {
-      id: crypto.randomUUID(),
+      id: tempId, // Assign a temporary ID for tracking
       title: newRule.title.trim(),
       text: newRule.text.trim(),
     };
     
-    setFormData({ ...formData, rules: [...formData.rules, rule] });
-    setNewRule({ title: '', text: '' });
-  };
-
-  const removeRule = (id: string) => {
-    setFormData(prev => ({
-      ...prev,
-      rules: prev.rules.filter(rule => rule.id !== id)
-    }));
-  };
-
-  const addPrize = () => {
-    if (!newPrize.label.trim() || !newPrize.description.trim()) return;
+    console.log('Adding new rule:', rule);
     
     setFormData(prev => ({
       ...prev,
-      prizes: [
-        ...prev.prizes,
-        { 
-          id: Math.random().toString(36).substring(2, 9), 
-          label: newPrize.label.trim(),
-          description: newPrize.description.trim(),
-          amount: newPrize.amount.trim(),
-          distribution_type: newPrize.distribution_type
-        }
-      ]
+      rules: [...prev.rules, rule]
     }));
-    setNewPrize({ 
-      label: '', 
-      description: '', 
-      amount: '', 
-      distribution_type: 'fixed' 
-    });
+    setNewRule({ title: '', text: '' });
+    setHasUnsavedChanges(true);
   };
 
-  const removePrize = (id: string) => {
-    setFormData(prev => ({
-      ...prev,
-      prizes: prev.prizes.filter(prize => prize.id !== id)
-    }));
+  const handleRemoveRule = async (id: string) => {
+    console.log('Removing rule with ID:', id);
+    if (!id) {
+      console.error('Attempted to remove rule without ID');
+      return;
+    }
+    
+    // If it's a server rule (not a temp ID) and we're in edit mode
+    if (isEditing && challengeId && !id.startsWith('temp_')) {
+      try {
+        // Call the API to remove the rule
+        await removeRuleApi({
+          challengeId,
+          ruleId: id
+        });
+        
+        toast({
+          title: 'Success',
+          description: 'Rule removed successfully',
+        });
+        
+        // The rule will be removed from our local state when the query is invalidated
+        // and the challenge data is refreshed
+      } catch (error) {
+        console.error('Failed to remove rule:', error);
+        toast({
+          title: 'Error',
+          description: 'Failed to remove rule',
+          variant: 'destructive',
+        });
+      }
+    }
+    
+    // For client-side only or if the API call fails, update the local state
+    setFormData(prev => {
+      // Check if we have the rule before attempting removal
+      const ruleExists = prev.rules.some(r => r.id === id);
+      if (!ruleExists) {
+        console.error('Rule not found for removal:', id);
+        return prev;
+      }
+      
+      setHasUnsavedChanges(true);
+      return {
+        ...prev,
+        rules: prev.rules.filter(rule => rule.id !== id)
+      };
+    });
   };
 
   // Drag and drop functionality for rules
@@ -378,15 +540,6 @@ export default function CreateChallenge() {
     newRules.splice(dragIndex, 1);
     newRules.splice(hoverIndex, 0, draggedRule);
     setFormData(prev => ({ ...prev, rules: newRules }));
-  };
-
-  // Drag and drop functionality for prizes
-  const movePrize = (dragIndex: number, hoverIndex: number) => {
-    const draggedPrize = formData.prizes[dragIndex];
-    const newPrizes = [...formData.prizes];
-    newPrizes.splice(dragIndex, 1);
-    newPrizes.splice(hoverIndex, 0, draggedPrize);
-    setFormData(prev => ({ ...prev, prizes: newPrizes }));
   };
 
   // Draggable rule component
@@ -440,7 +593,7 @@ export default function CreateChallenge() {
         <Button 
           variant="ghost" 
           size="icon" 
-          onClick={() => onRemove(rule.id)}
+          onClick={() => rule.id && onRemove(rule.id)}
         >
           <Trash2 className="h-4 w-4 text-destructive" />
         </Button>
@@ -448,71 +601,19 @@ export default function CreateChallenge() {
     );
   };
 
-  // Draggable prize component
-  const DraggablePrize = ({ prize, index, movePrize, onRemove }: { 
-    prize: Prize; 
-    index: number; 
-    movePrize: (dragIndex: number, hoverIndex: number) => void;
-    onRemove: (id: string) => void;
-  }) => {
-    const [{ isDragging }, drag] = useDrag({
-      type: ItemTypes.PRIZE,
-      item: { id: prize.id, index },
-      collect: (monitor) => ({
-        isDragging: monitor.isDragging(),
-      }),
-    });
-
-    const [, drop] = useDrop({
-      accept: ItemTypes.PRIZE,
-      hover: (item: { id: string; index: number }, monitor) => {
-        if (!item) return;
-        const dragIndex = item.index;
-        const hoverIndex = index;
-
-        if (dragIndex === hoverIndex) return;
-
-        movePrize(dragIndex, hoverIndex);
-        item.index = hoverIndex;
-      },
-    });
-
-    const ref = (node: HTMLDivElement | null) => {
-      drag(drop(node));
-    };
-
-    return (
-      <div
-        ref={ref}
-        className={`flex items-center p-3 mb-2 border rounded-md ${isDragging ? 'opacity-50' : 'opacity-100'}`}
-      >
-        <GripVertical className="h-5 w-5 mr-2 text-muted-foreground cursor-move" />
-        <div className="flex-grow">
-          <div className="font-medium">{prize.label}</div>
-          <div className="text-sm">{prize.description}</div>
-          {prize.amount && (
-            <div className="text-sm text-muted-foreground">
-              Amount: {prize.amount} ({prize.distribution_type})
-            </div>
-          )}
-        </div>
-        <Button 
-          variant="ghost" 
-          size="icon" 
-          onClick={() => onRemove(prize.id)}
-          className="h-8 w-8"
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      </div>
-    );
-  };
-
   const handleSaveDraft = async () => {
-    if (!validateForm()) {
+    const isValid = validateForm();
+    if (!isValid) {
+      // Create a more detailed error message
+      const errorFields = Object.keys(formErrors);
+      const errorMessages = errorFields.map(field => {
+        const fieldName = field.replace(/_/g, ' ');
+        return `${fieldName}: ${formErrors[field]}`;
+      });
+      
       toast({
-        title: 'Validation Error',
-        description: 'Please fix the errors before saving',
+        title: 'Missing Required Fields',
+        description: `Please fill in all required fields before saving.`,
         variant: 'destructive',
       });
       return;
@@ -521,7 +622,7 @@ export default function CreateChallenge() {
     try {
       // Map the form rules to match the API expected format
       const mappedRules = formData.rules.map(rule => ({
-        rule_id: rule.id,
+        ...(rule.id ? { rule_id: rule.id } : {}),  // ✅ only include for existing rules
         rule_title: rule.title,
         rule_description: rule.text,
         is_required: true
@@ -539,42 +640,24 @@ export default function CreateChallenge() {
         end_date: formData.end_date,
         is_public: formData.is_public,
         target_contribution_count: formData.target_contribution_count ? parseInt(formData.target_contribution_count) : undefined,
-        // Include the ID if we're editing an existing challenge
-        ...(id && { id }),
+        // Include the ID and challenge_reward_id if we're editing an existing challenge
+        ...(challengeId && { 
+          id: challengeId,
+          challenge_reward_id: challenge?.challenge_reward_id  || undefined
+        }),
       };
       
-      // Format reward data based on the reward configuration
+      // Format reward data based on the reward configuration using our serialization utility
       let challengeReward: ChallengeRewardUpdate | undefined;
       if (formData.reward_configuration) {
-        const rewardConfig = formData.reward_configuration;
+        const serializedReward = serializeRewardForAPI(formData.reward_configuration);
         
-        // Build reward value based on distribution method
-        let reward_value: {};
-        if (rewardConfig.distribution_method === DistributionMethod.TIERED && rewardConfig.tiers?.length) {
-          // Structure tiered rewards as JSON string
-          const tieredValue: Record<string, any> = {};
-          rewardConfig.tiers.forEach((tier, index) => {
-            tieredValue[`tier_${index + 1}`] = {
-              rank: tier.rank,
-              amount: tier.amount,
-              currency: rewardConfig.currency || 'USD'
-            };
-          });
-          reward_value = tieredValue;
-        } else {
-          // Structure fixed/percentage rewards as JSON string
-          const fixedValue = {
-            amount: rewardConfig.amount || 0,
-            currency: rewardConfig.currency || 'USD'
-          };
-          reward_value = fixedValue;
-        }
-        
-        // Create the challenge reward object
         challengeReward = {
-          reward_type: rewardConfig.reward_type,
-          reward_distribution_type: rewardConfig.distribution_method,
-          reward_value: reward_value
+          // Only include id if we're editing an existing challenge
+          ...(challengeId && challenge?.challenge_reward_id && { id: challenge.challenge_reward_id }),
+          reward_type: serializedReward.reward_type,
+          reward_distribution_type: serializedReward.reward_distribution_type,
+          reward_value: serializedReward.reward_value
         };
       }
 
@@ -586,6 +669,9 @@ export default function CreateChallenge() {
       };
       
       const result = await saveChallenge(dataToSave);
+      
+      // After successful save, clear the unsaved changes flag
+      setHasUnsavedChanges(false);
       
       if (isEditing) {
         toast({
@@ -599,8 +685,16 @@ export default function CreateChallenge() {
           title: 'Success',
           description: 'Challenge created as draft',
         });
-        // Navigate to edit page with the new challenge ID
-        navigate(`/user/edit-challenge/${result.id}`);
+        
+        // Navigate to edit page with the new challenge ID as a query parameter
+        if (result && result.challenge && result.challenge.id) {
+          navigate(`/user/create-challenge?id=${result.challenge.id}`);
+        }
+      }
+      
+      // If we were about to navigate away, now we can safely do so
+      if (pendingNavigation) {
+        confirmNavigation();
       }
     } catch (error) {
       console.error('Failed to save challenge:', error);
@@ -613,11 +707,20 @@ export default function CreateChallenge() {
   };
 
   const handlePublish = async () => {
-    if (!validateForm()) {
+    const isValid = validateForm();
+    if (!isValid) {
       setPublishDialogOpen(false);
+      
+      // Create a more detailed error message
+      const errorFields = Object.keys(formErrors);
+      const errorMessages = errorFields.map(field => {
+        const fieldName = field.replace(/_/g, ' ');
+        return `${fieldName}: ${formErrors[field]}`;
+      });
+      
       toast({
-        title: 'Validation Error',
-        description: 'Please fix the errors before publishing',
+        title: 'Missing Required Fields',
+        description: `Please fill in all required fields before publishing.`,
         variant: 'destructive',
       });
       return;
@@ -626,7 +729,7 @@ export default function CreateChallenge() {
     try {
       // Map the form rules to match the API expected format
       const mappedRules = formData.rules.map(rule => ({
-        rule_id: rule.id,
+        rule_id: rule.id || "",
         rule_title: rule.title,
         rule_description: rule.text,
         is_required: true
@@ -644,42 +747,24 @@ export default function CreateChallenge() {
         end_date: formData.end_date,
         is_public: formData.is_public,
         target_contribution_count: formData.target_contribution_count ? parseInt(formData.target_contribution_count) : undefined,
-        // Include the ID if we're editing an existing challenge
-        ...(id && { id }),
+        // Include the ID and challenge_reward_id if we're editing an existing challenge
+        ...(challengeId && { 
+          id: challengeId,
+          challenge_reward_id: challenge?.challenge_reward_id 
+        }),
       };
       
-      // Format reward data based on the reward configuration
+      // Format reward data based on the reward configuration using our serialization utility
       let challengeReward: ChallengeRewardUpdate | undefined;
       if (formData.reward_configuration) {
-        const rewardConfig = formData.reward_configuration;
+        const serializedReward = serializeRewardForAPI(formData.reward_configuration);
         
-        // Build reward value based on distribution method
-        let reward_value: string;
-        if (rewardConfig.distribution_method === DistributionMethod.TIERED && rewardConfig.tiers?.length) {
-          // Structure tiered rewards as JSON string
-          const tieredValue: Record<string, any> = {};
-          rewardConfig.tiers.forEach((tier, index) => {
-            tieredValue[`tier_${index + 1}`] = {
-              rank: tier.rank,
-              amount: tier.amount,
-              currency: rewardConfig.currency || 'USD'
-            };
-          });
-          reward_value = JSON.stringify(tieredValue);
-        } else {
-          // Structure fixed/percentage rewards as JSON string
-          const fixedValue = {
-            amount: rewardConfig.amount || 0,
-            currency: rewardConfig.currency || 'USD'
-          };
-          reward_value = JSON.stringify(fixedValue);
-        }
-        
-        // Create the challenge reward object
         challengeReward = {
-          reward_type: rewardConfig.reward_type,
-          reward_distribution_type: rewardConfig.distribution_method,
-          reward_value: reward_value
+          // Only include id if we're editing an existing challenge
+          ...(challengeId && challenge?.challenge_reward_id && { id: challenge.challenge_reward_id }),
+          reward_type: serializedReward.reward_type,
+          reward_distribution_type: serializedReward.reward_distribution_type,
+          reward_value: serializedReward.reward_value
         };
       }
 
@@ -690,11 +775,11 @@ export default function CreateChallenge() {
         ...(challengeReward && { challenge_reward: challengeReward })
       };
       
-      if (isEditing && id) {
+      if (isEditing && challengeId) {
         // First save any changes to the existing challenge
         await saveChallenge(dataToSave);
         // Then publish it
-        await publishChallenge(id);
+        await publishChallenge(challengeId);
         
         toast({
           title: 'Success',
@@ -705,15 +790,19 @@ export default function CreateChallenge() {
       } else {
         // Create and save a new challenge first
         const newChallenge = await saveChallenge(dataToSave);
-        // Then publish it
-        await publishChallenge(newChallenge.id);
         
-        toast({
-          title: 'Success',
-          description: 'Challenge published successfully',
-        });
-        // Navigate to the edit page with the new challenge ID
-        navigate(`/user/edit-challenge/${newChallenge.id}`);
+        if (newChallenge && newChallenge.challenge && newChallenge.challenge.id) {
+          // Then publish it
+          await publishChallenge(newChallenge.challenge.id);
+          
+          toast({
+            title: 'Success',
+            description: 'Challenge published successfully',
+          });
+          
+          // Navigate to the edit page with the new challenge ID as a query parameter
+          navigate(`/user/create-challenge?id=${newChallenge.challenge.id}`);
+        }
       }
       
       setPublishDialogOpen(false);
@@ -807,6 +896,9 @@ export default function CreateChallenge() {
     // Convert selected date to Date object for comparison
     const selectedDate = new Date(value);
     
+    // Always update form data first
+    setFormData(prev => ({ ...prev, [name]: value }));
+    
     if (name === 'start_date') {
       // Clear previous error
       setFormErrors(prev => ({ ...prev, start_date: '' }));
@@ -817,7 +909,6 @@ export default function CreateChallenge() {
           ...prev, 
           start_date: 'Start date cannot be in the past' 
         }));
-        return;
       }
       
       // If end date is already set, verify it's after new start date
@@ -844,7 +935,6 @@ export default function CreateChallenge() {
           ...prev, 
           end_date: 'End date cannot be in the past' 
         }));
-        return;
       }
       
       // Verify end date is after start date
@@ -855,13 +945,9 @@ export default function CreateChallenge() {
             ...prev, 
             end_date: 'End date must be after start date' 
           }));
-          return;
         }
       }
     }
-    
-    // Update form data
-    setFormData({ ...formData, [name]: value });
   };
 
   // Fix the EventCategory SelectItems
@@ -874,6 +960,49 @@ export default function CreateChallenge() {
     </>
   );
 
+  // Add dialog for unsaved changes
+  const UnsavedChangesDialog = () => (
+    <Dialog open={showUnsavedChangesDialog} onOpenChange={setShowUnsavedChangesDialog}>
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle className="text-xl">Unsaved Changes</DialogTitle>
+          <DialogDescription className="text-base">
+            You have unsaved changes. What would you like to do?
+          </DialogDescription>
+        </DialogHeader>
+        <div className="py-4">
+          <Alert variant="warning">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Warning</AlertTitle>
+            <AlertDescription>
+              If you leave without saving, your changes will be lost.
+            </AlertDescription>
+          </Alert>
+        </div>
+        <DialogFooter>
+          <Button 
+            variant="outline" 
+            onClick={() => setShowUnsavedChangesDialog(false)}
+          >
+            Continue Editing
+          </Button>
+          <Button 
+            variant="secondary"
+            onClick={() => {
+              setHasUnsavedChanges(false);
+              confirmNavigation();
+            }}
+          >
+            Discard Changes
+          </Button>
+          <Button onClick={handleSaveDraft}>
+            Save & Continue
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
   return (
     <div className="min-h-screen bg-background">
       <div className="container max-w-7xl mx-auto py-8 px-4">
@@ -881,7 +1010,7 @@ export default function CreateChallenge() {
           <Button 
             variant="ghost" 
             className="mb-6 hover:bg-accent"
-            onClick={() => navigate(-1)}
+            onClick={handleBackNavigation}
           >
             <ChevronLeft className="mr-2 h-4 w-4" />
             Back
@@ -974,7 +1103,6 @@ export default function CreateChallenge() {
                   <TabsTrigger value="details" className="flex-grow min-w-[150px] h-10 text-center">Basic Info</TabsTrigger>
                   <TabsTrigger value="settings" className="flex-grow min-w-[150px] h-10 text-center">Challenge Settings</TabsTrigger>
                   <TabsTrigger value="rules" className="flex-grow min-w-[150px] h-10 text-center">Rules & Criteria</TabsTrigger>
-                  <TabsTrigger value="prizes" className="flex-grow min-w-[150px] h-10 text-center">Prizes & Rewards</TabsTrigger>
                 </TabsList>
               </div>
               
@@ -997,7 +1125,7 @@ export default function CreateChallenge() {
                         name="challenge_name"
                         placeholder="Enter a descriptive name for your challenge"
                         value={formData.challenge_name}
-                        onChange={handleInputChange}
+                        onChange={(e) => handleInputChange(e)}
                         className={cn(
                           "h-11",
                           formErrors.challenge_name && "border-destructive"
@@ -1018,7 +1146,7 @@ export default function CreateChallenge() {
                         name="description"
                         placeholder="Describe your challenge's purpose and goals"
                         value={formData.description}
-                        onChange={handleInputChange}
+                        onChange={(e) => handleInputChange(e)}
                         className={cn(
                           "min-h-[120px] resize-none",
                           formErrors.description && "border-destructive"
@@ -1089,247 +1217,212 @@ export default function CreateChallenge() {
                   <CardHeader>
                     <CardTitle className="text-2xl">Challenge Settings</CardTitle>
                     <CardDescription className="text-base">
-                      Configure the challenge parameters and visibility.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="space-y-2">
-                        <Label htmlFor="event_type" className="text-base">
-                          Challenge Type
-                          <span className="text-destructive ml-1">*</span>
-                        </Label>
-                        <Select
-                          value={formData.event_type}
-                          onValueChange={(value) => handleSelectChange('event_type', value)}
-                        >
-                          <SelectTrigger className="h-11">
-                            <SelectValue placeholder="Select type" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={EventType.DATA_COLLECTION}>Data Collection</SelectItem>
-                            <SelectItem value={EventType.SAMPLE_REVIEW}>Sample Review</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      
-                      <div className="space-y-2">
-                        <Label htmlFor="task_type" className="text-base">
-                          Task Type
-                          <span className="text-destructive ml-1">*</span>
-                        </Label>
-                        <Select
-                          value={formData.task_type}
-                          onValueChange={(value) => handleSelectChange('task_type', value)}
-                        >
-                          <SelectTrigger className="h-11">
-                            <SelectValue placeholder="Select task type" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={TaskType.TRANSCRIPTION}>Transcription</SelectItem>
-                            <SelectItem value={TaskType.TRANSLATION}>Translation</SelectItem>
-                            <SelectItem value={TaskType.ANNOTATION}>Annotation</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="space-y-2">
-                        <Label htmlFor="language_id" className="text-base">
-                          Target Language
-                          <span className="text-destructive ml-1">*</span>
-                        </Label>
-                        <Select
-                          value={formData.language_id}
-                          onValueChange={(value) => handleSelectChange('language_id', value)}
-                        >
-                          <SelectTrigger className="h-11">
-                            <SelectValue placeholder="Select language" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {languages.map((language) => (
-                              <SelectItem key={language.id} value={language.id}>
-                                {language.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        {formErrors.language_id && (
-                          <p className="text-sm text-destructive">{formErrors.language_id}</p>
-                        )}
-                      </div>
-                      
-                      <div className="space-y-2">
-                        <Label htmlFor="event_category" className="text-base">
-                          Category
-                          <span className="text-destructive ml-1">*</span>
-                        </Label>
-                        <Select
-                          value={formData.event_category}
-                          onValueChange={(value) => handleSelectChange('event_category', value)}
-                        >
-                          <SelectTrigger className="h-11">
-                            <SelectValue placeholder="Select category" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {eventCategoryItems}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="space-y-2">
-                        <Label htmlFor="target_contribution_count" className="text-base">
-                          Target Contributions
-                        </Label>
-                        <Input
-                          id="target_contribution_count"
-                          name="target_contribution_count"
-                          type="number"
-                          placeholder="Enter target number"
-                          value={formData.target_contribution_count}
-                          onChange={handleInputChange}
-                          className="h-11"
-                        />
-                        <p className="text-sm text-muted-foreground">Optional: Set a target for contributions</p>
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="space-y-2">
-                        <Label htmlFor="start_date" className="text-base">
-                          Start Date
-                          <span className="text-destructive ml-1">*</span>
-                        </Label>
-                        <Input
-                          id="start_date"
-                          name="start_date"
-                          type="datetime-local"
-                          value={formData.start_date}
-                          onChange={handleDateInputChange}
-                          className={cn(
-                            "h-11",
-                            formErrors.start_date && "border-destructive"
-                          )}
-                        />
-                        {formErrors.start_date && (
-                          <p className="text-sm text-destructive">{formErrors.start_date}</p>
-                        )}
-                      </div>
-                      
-                      <div className="space-y-2">
-                        <Label htmlFor="end_date" className="text-base">
-                          End Date
-                          <span className="text-destructive ml-1">*</span>
-                        </Label>
-                        <Input
-                          id="end_date"
-                          name="end_date"
-                          type="datetime-local"
-                          value={formData.end_date}
-                          onChange={handleDateInputChange}
-                          className={cn(
-                            "h-11",
-                            formErrors.end_date && "border-destructive"
-                          )}
-                        />
-                        {formErrors.end_date && (
-                          <p className="text-sm text-destructive">{formErrors.end_date}</p>
-                        )}
-                      </div>
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Label className="text-base">Visibility</Label>
-                      <Select
-                        value={formData.is_public ? 'public' : 'private'}
-                        onValueChange={(value) => handleSelectChange('is_public', value === 'public' ? 'true' : 'false')}
-                      >
-                        <SelectTrigger className="h-11">
-                          <SelectValue placeholder="Select visibility" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="public">Public - All users can see and join</SelectItem>
-                          <SelectItem value="private">Private - Only invited users can join</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-              
-              <TabsContent value="rules" className="mt-6">
-                <Card className="border border-border/50">
-                  <CardHeader>
-                    <CardTitle className="text-2xl">Rules & Evaluation Criteria</CardTitle>
-                    <CardDescription className="text-base">
-                      Define how participants should approach the challenge and how contributions will be evaluated.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-8">
-                    <div className="space-y-4">
-                      <Label className="text-base">Challenge Rules</Label>
-                      <DndProvider backend={HTML5Backend}>
-                        <div className="space-y-3">
-                          {formData.rules.map((rule, index) => (
-                            <DraggableRule
-                              key={rule.id}
-                              rule={rule}
-                              index={index}
-                              moveRule={moveRule}
-                              onRemove={removeRule}
-                            />
-                          ))}
-                        </div>
-                      </DndProvider>
-                      <div className="flex gap-3">
-                        <Input
-                          placeholder="Add a new rule..."
-                          value={newRule.title}
-                          onChange={(e) => setNewRule({ ...newRule, title: e.target.value })}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              addRule();
-                            }
-                          }}
-                          className="h-11"
-                        />
-                        <Input
-                          placeholder="Add a new rule description..."
-                          value={newRule.text}
-                          onChange={(e) => setNewRule({ ...newRule, text: e.target.value })}
-                          className="h-11"
-                        />
-                        <Button onClick={addRule} className="h-11">
-                          <Plus className="h-4 w-4 mr-2" />
-                          Add Rule
-                        </Button>
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        Clearly explain what participants should do and any guidelines to follow.
-                      </p>
-                    </div>
-
-                  </CardContent>
-                </Card>
-              </TabsContent>
-              
-              <TabsContent value="prizes" className="mt-6">
-                <Card className="border border-border/50">
-                  <CardHeader>
-                    <CardTitle className="text-2xl">Prizes & Rewards</CardTitle>
-                    <CardDescription className="text-base">
-                      Define what participants can win or earn from this challenge.
+                      Configure the basic settings and parameters for your challenge.
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-8">
                     <Separator className="my-2" />
+                    
+                    {/* Basic Information */}
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-medium">Basic Information</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                          <Label htmlFor="challenge_name">Challenge Name *</Label>
+                          <Input
+                            id="challenge_name"
+                            value={formData.challenge_name}
+                            onChange={(e) => handleInputChange(e)}
+                            placeholder="Enter challenge name"
+                            className={formErrors.challenge_name ? 'border-red-500' : ''}
+                          />
+                          {formErrors.challenge_name && (
+                            <p className="text-sm text-red-500">{formErrors.challenge_name}</p>
+                          )}
+                        </div>
+                        
+                        <div className="space-y-2">
+                          <Label htmlFor="language">Language *</Label>
+                          <Select
+                            value={formData.language_id}
+                            onValueChange={(value) => handleDirectChange('language_id', value)}
+                          >
+                            <SelectTrigger className={formErrors.language_id ? 'border-red-500' : ''}>
+                              <SelectValue placeholder="Select language" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {languages.map((language) => (
+                                <SelectItem key={language.id} value={language.id}>
+                                  {language.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {formErrors.language_id && (
+                            <p className="text-sm text-red-500">{formErrors.language_id}</p>
+                          )}
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label htmlFor="description">Description *</Label>
+                        <Textarea
+                          id="description"
+                          value={formData.description}
+                          onChange={(e) => handleInputChange(e)}
+                          placeholder="Enter challenge description"
+                          className={formErrors.description ? 'border-red-500' : ''}
+                          rows={4}
+                        />
+                        {formErrors.description && (
+                          <p className="text-sm text-red-500">{formErrors.description}</p>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {/* Challenge Type */}
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-medium">Challenge Type</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="space-y-2">
+                          <Label htmlFor="event_type">Event Type *</Label>
+                          <Select
+                            value={formData.event_type}
+                            onValueChange={(value) => handleDirectChange('event_type', value as EventType)}
+                          >
+                            <SelectTrigger className={formErrors.event_type ? 'border-red-500' : ''}>
+                              <SelectValue placeholder="Select event type" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {Object.values(EventType).map((type) => (
+                                <SelectItem key={type} value={type}>
+                                  {type.replace(/_/g, ' ')}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {formErrors.event_type && (
+                            <p className="text-sm text-red-500">{formErrors.event_type}</p>
+                          )}
+                        </div>
+                        
+                        <div className="space-y-2">
+                          <Label htmlFor="task_type">Task Type *</Label>
+                          <Select
+                            value={formData.task_type}
+                            onValueChange={(value) => handleDirectChange('task_type', value as TaskType)}
+                          >
+                            <SelectTrigger className={formErrors.task_type ? 'border-red-500' : ''}>
+                              <SelectValue placeholder="Select task type" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {Object.values(TaskType).map((type) => (
+                                <SelectItem key={type} value={type}>
+                                  {type.replace(/_/g, ' ')}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {formErrors.task_type && (
+                            <p className="text-sm text-red-500">{formErrors.task_type}</p>
+                          )}
+                        </div>
+                        
+                        <div className="space-y-2">
+                          <Label htmlFor="event_category">Event Category *</Label>
+                          <Select
+                            value={formData.event_category}
+                            onValueChange={(value) => handleDirectChange('event_category', value as EventCategory)}
+                          >
+                            <SelectTrigger className={formErrors.event_category ? 'border-red-500' : ''}>
+                              <SelectValue placeholder="Select event category" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {Object.values(EventCategory).map((category) => (
+                                <SelectItem key={category} value={category}>
+                                  {category.replace(/_/g, ' ')}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {formErrors.event_category && (
+                            <p className="text-sm text-red-500">{formErrors.event_category}</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Dates and Targets */}
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-medium">Dates and Targets</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="space-y-2">
+                          <Label htmlFor="start_date">Start Date *</Label>
+                          <Input
+                            id="start_date"
+                            type="datetime-local"
+                            name ="start_date"
+                            value={formData.start_date}
+                            onChange={(e) => handleInputChange(e)}
+                            className={formErrors.start_date ? 'border-red-500' : ''}
+                          />
+                          {formErrors.start_date && (
+                            <p className="text-sm text-red-500">{formErrors.start_date}</p>
+                          )}
+                        </div>
+                        
+                        <div className="space-y-2">
+                          <Label htmlFor="end_date">End Date *</Label>
+                          <Input
+                            id="end_date"
+                            name = "end_date"
+                            type="datetime-local"
+                            value={formData.end_date}
+                            onChange={(e) => handleInputChange(e)}
+                            className={formErrors.end_date ? 'border-red-500' : ''}
+                          />
+                          {formErrors.end_date && (
+                            <p className="text-sm text-red-500">{formErrors.end_date}</p>
+                          )}
+                        </div>
+                        
+                        <div className="space-y-2">
+                          <Label htmlFor="target_contribution_count">Target Contributions</Label>
+                          <Input
+                            id="target_contribution_count"
+                            type="number"
+                            value={formData.target_contribution_count}
+                            onChange={(e) => handleDirectChange('target_contribution_count', e.target.value)}
+                            placeholder="Enter target number"
+                            className={formErrors.target_contribution_count ? 'border-red-500' : ''}
+                          />
+                          {formErrors.target_contribution_count && (
+                            <p className="text-sm text-red-500">{formErrors.target_contribution_count}</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Visibility */}
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-medium">Visibility</h3>
+                      <div className="flex items-center space-x-2">
+                        <Switch
+                          id="is_public"
+                          checked={formData.is_public}
+                          onCheckedChange={(checked) => handleDirectChange('is_public', checked)}
+                        />
+                        <Label htmlFor="is_public">Make this challenge public</Label>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        Public challenges are visible to all users. Private challenges are only visible to users you invite.
+                      </p>
+                    </div>
+                    
+                    {/* Rewards Configuration */}
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
-                        <h3 className="text-lg font-medium">Structured Rewards</h3>
+                        <h3 className="text-lg font-medium">Rewards Configuration</h3>
                         <Badge variant="outline" className="text-xs font-medium">New</Badge>
                       </div>
                       <RewardsTab 
@@ -1341,7 +1434,83 @@ export default function CreateChallenge() {
                           });
                         }}
                         isLoading={loading}
+                        isPublished={isEditing && challenge?.is_published}
                       />
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+              
+              <TabsContent value="rules" className="mt-6">
+                <Card className="border border-border/50">
+                  <CardHeader>
+                    <CardTitle className="text-2xl">Rules & Criteria</CardTitle>
+                    <CardDescription className="text-base">
+                      Define the rules and criteria for your challenge.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-8">
+                    <Separator className="my-2" />
+                    
+                    {/* Rules List */}
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-medium">Challenge Rules</h3>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={addRule}
+                          disabled={loading}
+                        >
+                          <Plus className="h-4 w-4 mr-2" />
+                          Add Rule
+                        </Button>
+                      </div>
+                      
+                      {/* New Rule Form */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 border rounded-lg">
+                        <div className="space-y-2">
+                          <Label htmlFor="new_rule_title">Rule Title</Label>
+                          <Input
+                            id="new_rule_title"
+                            value={newRule.title}
+                            onChange={(e) => setNewRule({ ...newRule, title: e.target.value })}
+                            placeholder="Enter rule title"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="new_rule_text">Rule Description</Label>
+                          <Input
+                            id="new_rule_text"
+                            value={newRule.text}
+                            onChange={(e) => setNewRule({ ...newRule, text: e.target.value })}
+                            placeholder="Enter rule description"
+                          />
+                        </div>
+                      </div>
+                      
+                      {/* Rules List */}
+                      <div className="space-y-4">
+                        {formData.rules.length === 0 ? (
+                          <div className="text-center py-8 text-muted-foreground">
+                            <p>No rules added yet. Click "Add Rule" to create your first rule.</p>
+                          </div>
+                        ) : (
+                          <DndProvider backend={HTML5Backend}>
+                            <div className="space-y-2">
+                              {formData.rules.map((rule, index) => (
+                                <DraggableRule
+                                  key={rule.id}
+                                  rule={rule}
+                                  index={index}
+                                  moveRule={moveRule}
+                                  onRemove={handleRemoveRule}
+                                />
+                              ))}
+                            </div>
+                          </DndProvider>
+                        )}
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -1426,6 +1595,9 @@ export default function CreateChallenge() {
           </div>
         </div>
       </div>
+      
+      {/* Add the unsaved changes dialog */}
+      <UnsavedChangesDialog />
     </div>
   );
 } 

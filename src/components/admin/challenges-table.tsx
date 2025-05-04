@@ -162,7 +162,7 @@ export function ChallengesTable({ challenges, loading }: ChallengesTableProps) {
                     <DropdownMenuItem onClick={() => navigate(`/user/challenge/${challenge.id}`)}>
                       View Details
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => navigate(`/user/edit-challenge/${challenge.id}`)}>
+                    <DropdownMenuItem onClick={() => navigate(`/user/create-challenge?id=${challenge.id}`)}>
                       <Edit className="mr-2 h-4 w-4" />
                       Edit Challenge
                     </DropdownMenuItem>

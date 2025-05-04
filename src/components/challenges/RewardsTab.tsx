@@ -20,17 +20,207 @@ import {
   RewardConfiguration,
 } from "@/types/rewards";
 
+// Utility function to convert API reward data to RewardConfiguration
+export const parseRewardFromAPI = (apiReward: any): RewardConfiguration => {
+  if (!apiReward) {
+    return {
+      reward_type: RewardType.CASH,
+      distribution_method: DistributionMethod.FIXED,
+      amount: 0,
+      currency: 'USD',
+    };
+  }
+
+  // Extract reward type and distribution type
+  const reward_type = apiReward.reward_type as RewardType || RewardType.CASH;
+  const distribution_method = apiReward.reward_distribution_type as DistributionMethod || DistributionMethod.FIXED;
+  
+  // Parse reward value from string if needed
+  let reward_value: any = apiReward.reward_value;
+  if (typeof reward_value === 'string') {
+    try {
+      reward_value = JSON.parse(reward_value);
+    } catch (e) {
+      console.error('Failed to parse reward value string:', e);
+      reward_value = {};
+    }
+  }
+
+  // Default configuration
+  const config: RewardConfiguration = {
+    reward_type,
+    distribution_method,
+  };
+
+  // Add additional fields based on reward type and distribution method
+  if (reward_type === RewardType.CASH) {
+    if (distribution_method === DistributionMethod.FIXED || distribution_method === DistributionMethod.PERCENTAGE) {
+      config.amount = reward_value?.amount || 0;
+      config.currency = reward_value?.currency || 'USD';
+    } else if (distribution_method === DistributionMethod.TIERED && reward_value) {
+      config.currency = Object.values(reward_value)[0]?.currency || 'USD';
+      
+      // Extract tiers from reward_value structure
+      const tiers = Object.keys(reward_value).map(key => {
+        const tierData = reward_value[key];
+        const rank = parseInt(key.replace('tier_', '')) || 1;
+        return {
+          rank,
+          label: `${rank}${rank === 1 ? 'st' : rank === 2 ? 'nd' : rank === 3 ? 'rd' : 'th'} Place`,
+          amount: tierData.amount || 0,
+          threshold: 0,
+        };
+      }).sort((a, b) => a.rank - b.rank);
+      
+      config.tiers = tiers.length > 0 ? tiers : undefined;
+    }
+  } else if (reward_type === RewardType.BADGE) {
+    if (distribution_method === DistributionMethod.FIXED) {
+      config.badge_name = reward_value?.name || '';
+      config.badge_description = reward_value?.description || '';
+      config.badge_icon = reward_value?.icon || '';
+    } else if (distribution_method === DistributionMethod.TIERED && reward_value) {
+      const tiers = Object.keys(reward_value).map(key => {
+        const tierData = reward_value[key];
+        const rank = parseInt(key.replace('tier_', '')) || 1;
+        return {
+          rank,
+          label: tierData.name || `${rank}${rank === 1 ? 'st' : rank === 2 ? 'nd' : rank === 3 ? 'rd' : 'th'} Place Badge`,
+          description: tierData.description || '',
+          amount: 0,
+          threshold: 0,
+        };
+      }).sort((a, b) => a.rank - b.rank);
+      
+      config.tiers = tiers.length > 0 ? tiers : undefined;
+      config.badge_icon = reward_value?.icon || '';
+    }
+  } else if (reward_type === RewardType.SWAG) {
+    if (distribution_method === DistributionMethod.FIXED) {
+      config.swag_item = reward_value?.item || '';
+      config.swag_description = reward_value?.description || '';
+      config.coupon_code = reward_value?.coupon_code || '';
+    } else if (distribution_method === DistributionMethod.TIERED && reward_value) {
+      const tiers = Object.keys(reward_value).map(key => {
+        const tierData = reward_value[key];
+        const rank = parseInt(key.replace('tier_', '')) || 1;
+        return {
+          rank,
+          label: tierData.item || `${rank}${rank === 1 ? 'st' : rank === 2 ? 'nd' : rank === 3 ? 'rd' : 'th'} Place SWAG`,
+          description: tierData.description || '',
+          amount: 0,
+          threshold: 0,
+        };
+      }).sort((a, b) => a.rank - b.rank);
+      
+      config.tiers = tiers.length > 0 ? tiers : undefined;
+    }
+  }
+
+  return config;
+};
+
+// Utility function to convert RewardConfiguration to API format
+export const serializeRewardForAPI = (config: RewardConfiguration) => {
+  const { reward_type, distribution_method } = config;
+  
+  // Base reward object
+  const reward = {
+    reward_type,
+    reward_distribution_type: distribution_method,
+  };
+  
+  // Build reward_value based on reward type and distribution method
+  let reward_value: Record<string, any> = {};
+  
+  if (reward_type === RewardType.CASH) {
+    if (distribution_method === DistributionMethod.FIXED || distribution_method === DistributionMethod.PERCENTAGE) {
+      reward_value = {
+        amount: config.amount || 0,
+        currency: config.currency || 'USD'
+      };
+    } else if (distribution_method === DistributionMethod.TIERED && config.tiers?.length) {
+      // Structure tiered rewards as key-value pairs
+      config.tiers.forEach((tier, index) => {
+        reward_value[`tier_${tier.rank}`] = {
+          rank: tier.rank,
+          amount: tier.amount,
+          currency: config.currency || 'USD'
+        };
+      });
+    }
+  } else if (reward_type === RewardType.BADGE) {
+    if (distribution_method === DistributionMethod.FIXED) {
+      reward_value = {
+        name: config.badge_name || '',
+        description: config.badge_description || '',
+        icon: config.badge_icon || ''
+      };
+    } else if (distribution_method === DistributionMethod.TIERED && config.tiers?.length) {
+      // Add common badge properties
+      if (config.badge_icon) {
+        reward_value.icon = config.badge_icon;
+      }
+      
+      // Add tier-specific badge properties
+      config.tiers.forEach((tier) => {
+        reward_value[`tier_${tier.rank}`] = {
+          rank: tier.rank,
+          name: tier.label || '',
+          description: tier.description || ''
+        };
+      });
+    }
+  } else if (reward_type === RewardType.SWAG) {
+    if (distribution_method === DistributionMethod.FIXED) {
+      reward_value = {
+        item: config.swag_item || '',
+        description: config.swag_description || '',
+        coupon_code: config.coupon_code || ''
+      };
+    } else if (distribution_method === DistributionMethod.TIERED && config.tiers?.length) {
+      // Structure tiered swag rewards
+      config.tiers.forEach((tier) => {
+        reward_value[`tier_${tier.rank}`] = {
+          rank: tier.rank,
+          item: tier.label || '',
+          description: tier.description || ''
+        };
+      });
+    }
+  }
+  
+  return {
+    ...reward,
+    reward_value
+  };
+};
+
 export const RewardsTab = ({
   rewardConfig,
   onChange,
   isLoading,
+  isPublished = false,
 }: {
   rewardConfig: RewardConfiguration;
   onChange: (config: RewardConfiguration) => void;
   isLoading: boolean;
+  isPublished?: boolean;
 }) => {
+  // Combine isLoading and isPublished to determine if the form should be disabled
+  const isDisabled = isLoading || isPublished;
+  
   return (
     <div className="space-y-6">
+      {isPublished && (
+        <div className="bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-300 dark:border-yellow-800 rounded-md p-4 mb-4">
+          <h4 className="font-medium text-yellow-800 dark:text-yellow-400">Published Challenge</h4>
+          <p className="text-sm text-yellow-700 dark:text-yellow-500 mt-1">
+            Rewards cannot be modified for published challenges.
+          </p>
+        </div>
+      )}
+      
       <TypeSelector
         selectedType={rewardConfig.reward_type}
         onChange={(type) => {
@@ -46,7 +236,7 @@ export const RewardsTab = ({
             swag_item: type === RewardType.SWAG ? "" : undefined,
           });
         }}
-        disabled={isLoading}
+        disabled={isDisabled}
       />
 
       <Separator />
@@ -69,7 +259,7 @@ export const RewardsTab = ({
                 : undefined,
           });
         }}
-        disabled={isLoading}
+        disabled={isDisabled}
       />
 
       <Separator />
@@ -77,7 +267,7 @@ export const RewardsTab = ({
       <ConfigurationForm
         config={rewardConfig}
         onChange={onChange}
-        disabled={isLoading}
+        disabled={isDisabled}
       />
 
       <Separator />

@@ -155,10 +155,10 @@ export default function LetsTalk() {
                   <Label htmlFor="transcription">Text to Record</Label>
                   <Textarea
                     id="transcription"
-                    placeholder="Enter the text you want to record..."
+                    placeholder="Enter the AFRICAN LANGUAGE you want to record..."
                     value={transcription}
                     onChange={(e) => setTranscription(e.target.value)}
-                    className="h-32"
+                    className="h-28"
                   />
                 </div>
               </div>

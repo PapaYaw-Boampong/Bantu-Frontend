@@ -5,6 +5,7 @@ import {
   ChallengeSummary,
   UserChallengeFilter,
 } from '@/types/challenge';
+import { mockUserChallenges } from '@/mocks/challengeMocks';
 
 // Fetch all challenges (optionally filtered)
 export function useUserChallenges(params: UserChallengeFilter = {}) {

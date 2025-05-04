@@ -9,6 +9,14 @@ import {
   CardContent,
   CardFooter,
 } from '@/components/ui/card';
+
+import sampleImage from '@/components/assets/img.jpg';
+
+const MOCK_IMAGE = {
+  url: sampleImage,
+  englishAnnotation: 'A medical professional examining a patient in a modern hospital setting',
+};
+
 import {
   Select,
   SelectContent,
@@ -17,11 +25,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
-// Mock data for demonstration
-const MOCK_IMAGE = {
-  url: 'https://example.com/sample-image.jpg',
-  englishAnnotation: 'A medical professional examining a patient in a modern hospital setting',
-};
 
 export default function Annotate() {
   const {
@@ -101,12 +104,12 @@ export default function Annotate() {
             {/* Right side - Text fields */}
             <div className="space-y-6 animate-fade-up [animation-delay:600ms] opacity-0">
               {/* English Annotation */}
-              <div className="space-y-2">
+              {/* <div className="space-y-2">
                 <Label>English Annotation</Label>
                 <div className="p-4 border rounded-md bg-muted/30">
                   <p className="text-lg">{MOCK_IMAGE.englishAnnotation}</p>
                 </div>
-              </div>
+              </div> */}
               
               {/* Target Translation */}
               <div className="space-y-2">

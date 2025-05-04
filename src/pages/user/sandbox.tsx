@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import WorkspaceManager from '@/components/workspace/workspace-manager';
+import { CardHeader } from '@/components/ui/card';
 
 export default function Sandbox() {
   const location = useLocation();

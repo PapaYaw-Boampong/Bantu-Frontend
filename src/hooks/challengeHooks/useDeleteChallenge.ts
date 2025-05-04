@@ -8,6 +8,7 @@ export function useDeleteChallenge() {
     mutationFn: (id: string) => challengeService.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({queryKey: ['challenges']});
+      queryClient.invalidateQueries({queryKey: ['your-challenges']});
     },
   });
 }

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronLeft, Calendar, Users, Award, Bookmark, BookmarkCheck, MessageSquare, Share2 } from 'lucide-react';
-import { useGetChallenge } from '@/hooks/challengeHooks/useGetChallenge';
+import { ChevronLeft, Calendar, Users, Award, Bookmark, BookmarkCheck, MessageSquare, Share2, Loader2 } from 'lucide-react';
+import { useGetDetailedChallenge, DetailedChallengeResponseWrapper } from '@/hooks/challengeHooks/useGetDetailedChallenge';
+import { useGetChallengeLeaderboard } from '@/hooks/challengeHooks/useGetChallengeLeaderboard';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -17,87 +18,58 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  CardFooter,
 } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { EventType } from '@/types/challenge';
+import { EventType, TaskType, ChallengeStatus, LeaderboardEntry } from '@/types/challenge';
 import { format } from 'date-fns';
+import { RewardType } from '@/types/rewards';
+import { parseRewardFromAPI } from '@/components/challenges/RewardsTab';
 
 export default function ChallengeDetail() {
-  const { id } = useParams<{ id: string }>();
+  const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
-  // const { getChallenge: challenge, isLoading, error } = useGetChallenge(id);
-
-  const [challenge, setChallenge] = useState<any>(null);
+  const { data: challengeResponseData, isLoading, error } = useGetDetailedChallenge(id);
+  const { data: leaderboardData, isLoading: isLoadingLeaderboard } = useGetChallengeLeaderboard(id);
+  
+  // Extract challenge data from the wrapper
+  const challengeData = challengeResponseData?.challenge;
+  const rewardData = challengeResponseData?.reward;
+  const rulesData = challengeResponseData?.rules || [];
+  
   const [joined, setJoined] = useState(false);
   const [commentText, setCommentText] = useState('');
-  
-  // Mockup leaderboard data
-  const leaderboard = [
-    { id: 1, username: 'user1', contributions: 245, points: 890 },
-    { id: 2, username: 'translator_pro', contributions: 187, points: 753 },
-    { id: 3, username: 'linguist42', contributions: 156, points: 642 },
-    { id: 4, username: 'polyglot', contributions: 134, points: 521 },
-    { id: 5, username: 'language_lover', contributions: 98, points: 410 },
-  ];
-  
-  // Mockup comments
   const [comments, setComments] = useState([
     {
       id: 1,
       user: { username: 'translator_pro', avatar: '' },
-      text: 'This challenge is great for practicing medical terminology!',
+      text: 'This challenge is great for practicing new skills!',
       timestamp: new Date(Date.now() - 86400000 * 2).toISOString(), // 2 days ago
     },
     {
       id: 2,
-      user: { username: 'linguist42', avatar: '' },
-      text: 'The audio quality is excellent. Makes it easier to transcribe accurately.',
+      user: { username: 'language_lover', avatar: '' },
+      text: 'Looking forward to contributing to this challenge.',
       timestamp: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
     },
   ]);
 
   useEffect(() => {
     if (id) {
-      const fetchChallengeDetails = async () => {
-        try {
-          // For testing, directly mock the challenge data
-          setChallenge({
-            challenge_name: "Mock Medical Transcription Challenge",
-            description: "Transcribe clinical conversations accurately to support training of medical ASR models.",
-            event_type: EventType.DATA_COLLECTION,
-            start_date: new Date().toISOString(),
-            end_date: new Date(Date.now() + 7 * 86400000).toISOString(),
-            participant_count: 42,
-            target_contribution_count: 500,
-            rules: "1. Only native speakers.\n2. Use high-quality audio.\n3. No background noise.",
-            evaluation_criteria: "Accuracy, Clarity, Relevance",
-            prizes: "Top 3 contributors get $100, $75, and $50 respectively.",
-          });
-  
-          setJoined(true); // optionally simulate auto-joining
-  
-          const joinedChallenges = localStorage.getItem('joinedChallenges');
-          if (joinedChallenges) {
-            const parsed = JSON.parse(joinedChallenges);
-            setJoined(parsed.includes(id));
-          }
-        } catch (error) {
-          console.error('Failed to fetch challenge details:', error);
-          toast({
-            title: 'Error',
-            description: 'Failed to load challenge details',
-            variant: 'destructive',
-          });
-        }
-      };
-  
-      fetchChallengeDetails();
+      // Check if this challenge is in the joined challenges list
+      const joinedChallenges = localStorage.getItem('joinedChallenges');
+      if (joinedChallenges) {
+        const parsed = JSON.parse(joinedChallenges);
+        setJoined(parsed.includes(id));
+      }
     }
-  }, [id, toast]);
+  }, [id]);
 
   const handleJoinChallenge = () => {
+    if (!challengeData) return;
+    
     // Toggle joined state
     const newJoinedState = !joined;
     setJoined(newJoinedState);
@@ -112,13 +84,13 @@ export default function ChallengeDetail() {
       }
       toast({
         title: 'Joined Challenge',
-        description: `You have joined "${challenge.challenge_name}"`,
+        description: `You have joined "${challengeData.challenge_name}"`,
       });
     } else {
       parsed = parsed.filter((challengeId: string) => challengeId !== id);
       toast({
         title: 'Left Challenge',
-        description: `You have left "${challenge.challenge_name}"`,
+        description: `You have left "${challengeData.challenge_name}"`,
       });
     }
     
@@ -156,24 +128,178 @@ export default function ChallengeDetail() {
   const getEventTypeLabel = (type: EventType) => {
     switch (type) {
       case EventType.SAMPLE_REVIEW:
-        return 'Sample Review';
+        return 'Evaluation';
       case EventType.DATA_COLLECTION:
         return 'Data Collection';
       default:
         return 'Unknown';
     }
   };
+  
+  const getTaskTypeLabel = (type: TaskType) => {
+    switch (type) {
+      case TaskType.TRANSCRIPTION:
+        return 'Transcription';
+      case TaskType.TRANSLATION:
+        return 'Translation';
+      case TaskType.ANNOTATION:
+        return 'Annotation';
+      default:
+        return 'Unknown';
+    }
+  };
+  
+  const getStatusLabel = (status?: ChallengeStatus) => {
+    if (!status) return { label: 'Unknown', color: 'bg-gray-400' };
+    
+    switch (status) {
+      case ChallengeStatus.UPCOMING:
+        return { label: 'Upcoming', color: 'bg-blue-500' };
+      case ChallengeStatus.Active:
+        return { label: 'Active', color: 'bg-green-500' };
+      case ChallengeStatus.COMPLETED:
+        return { label: 'Completed', color: 'bg-purple-500' };
+      default:
+        return { label: status, color: 'bg-gray-400' };
+    }
+  };
+  
+  // Parse rewards data
+  const getRewardsSummary = () => {
+    if (!rewardData) return "No specific prizes have been listed for this challenge.";
+    
+    try {
+      // We don't need to parse the reward anymore since it's already an object
+      const rewardConfig = rewardData; 
+      
+      if (rewardConfig.reward_type === RewardType.CASH) {
+        if (rewardConfig.reward_distribution_type === 'fixed') {
+          return `Fixed cash reward of ${rewardConfig.reward_value} ${rewardConfig.currency || 'USD'} for qualifying participants.`;
+        } else if (rewardConfig.reward_distribution_type === 'tiered' && rewardConfig.tiers) {
+          const tierDescriptions = rewardConfig.tiers.map((tier: any) => 
+            `${tier.label}: ${tier.amount} ${rewardConfig.currency || 'USD'}`
+          ).join('\n');
+          return `Tiered cash rewards based on ranking:\n${tierDescriptions}`;
+        }
+      } else if (rewardConfig.reward_type === RewardType.BADGE) {
+        if (rewardConfig.reward_distribution_type === 'fixed') {
+          return `Achievement badge: ${rewardConfig.badge_name || 'Challenge Badge'}\n${rewardConfig.badge_description || 'For completing the challenge'}`;
+        } else if (rewardConfig.reward_distribution_type === 'tiered' && rewardConfig.tiers) {
+          const tierDescriptions = rewardConfig.tiers.map((tier: any) => 
+            `${tier.label}: ${tier.description || 'For achieving this rank'}`
+          ).join('\n');
+          return `Tiered badge rewards:\n${tierDescriptions}`;
+        }
+      } else if (rewardConfig.reward_type === RewardType.SWAG) {
+        if (rewardConfig.reward_distribution_type === 'fixed') {
+          return `SWAG reward: ${rewardConfig.swag_item || 'Merchandise'}\n${rewardConfig.swag_description || 'For participating in the challenge'}`;
+        } else if (rewardConfig.reward_distribution_type === 'tiered' && rewardConfig.tiers) {
+          const tierDescriptions = rewardConfig.tiers.map((tier: any) => 
+            `${tier.label}: ${tier.description || 'For achieving this rank'}`
+          ).join('\n');
+          return `Tiered SWAG rewards:\n${tierDescriptions}`;
+        }
+      }
+    } catch (error) {
+      console.error('Error parsing reward data:', error);
+    }
+    
+    return "Rewards information available upon joining the challenge.";
+  };
+  
+  // Add a helper function to safely format dates
+  const safeFormatDate = (dateString: string | undefined) => {
+    if (!dateString) return 'N/A';
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return 'N/A';
+      return format(date, 'MMM d, yyyy');
+    } catch (error) {
+      console.error('Error formatting date:', error);
+      return 'N/A';
+    }
+  };
 
-  if (isLoading || !challenge) {
+  // Fix the time remaining calculation with a safe version
+  const getTimeRemaining = () => {
+    if (!challengeData?.end_date) return 0;
+    
+    try {
+      const endDate = new Date(challengeData.end_date);
+      const startDate = new Date(challengeData.start_date || Date.now());
+      
+      if (isNaN(endDate.getTime()) || isNaN(startDate.getTime())) return 0;
+      
+      const now = new Date();
+      return Math.max(0, Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+    } catch (error) {
+      console.error('Error calculating time remaining:', error);
+      return 0;
+    }
+  };
+  
+  // Calculate the progress percentage safely
+  const getTimeProgressPercentage = () => {
+    if (!challengeData?.start_date || !challengeData?.end_date) return 0;
+    
+    try {
+      const startDate = new Date(challengeData.start_date);
+      const endDate = new Date(challengeData.end_date);
+      const now = new Date();
+      
+      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) return 0;
+      
+      const totalDuration = endDate.getTime() - startDate.getTime();
+      if (totalDuration <= 0) return 0;
+      
+      const elapsed = endDate.getTime() - now.getTime();
+      return Math.max(0, Math.min(100, (elapsed / totalDuration) * 100));
+    } catch (error) {
+      console.error('Error calculating progress percentage:', error);
+      return 0;
+    }
+  };
+  
+  // Calculate participation percentage
+  const getParticipationPercentage = () => {
+    if (!challengeData?.target_contribution_count || !challengeData?.participant_count) return 0;
+    return Math.min(100, (challengeData.participant_count / challengeData.target_contribution_count) * 100);
+  };
 
+  if (isLoading || !challengeData) {
     return (
-      <div className="container mx-auto py-8 px-4">
-        <div className="flex justify-center items-center h-64">
+      <div className="container mx-auto py-12 px-4">
+        <div className="flex flex-col justify-center items-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin mb-4 text-primary" />
           <p>Loading challenge details...</p>
         </div>
       </div>
     );
   }
+  
+  if (error) {
+    return (
+      <div className="container mx-auto py-8 px-4">
+        <div className="flex flex-col justify-center items-center h-64">
+          <h2 className="text-xl font-semibold mb-2">Error loading challenge</h2>
+          <p className="text-muted-foreground">Unable to load challenge details. Please try again later.</p>
+          <Button 
+            variant="outline" 
+            className="mt-4"
+            onClick={() => navigate(-1)}
+          >
+            <ChevronLeft className="mr-2 h-4 w-4" />
+            Go Back
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Format rules for display using rulesData directly
+  const formattedRules = rulesData.length > 0
+    ? rulesData.map((rule: any) => `${rule.rule_title}: ${rule.rule_description}`).join('\n\n')
+    : "No specific rules have been provided for this challenge.";
 
   return (
     <div className="container mx-auto py-8 px-4">
@@ -191,10 +317,23 @@ export default function ChallengeDetail() {
           <div className="mb-6">
             <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
               <div>
-                <Badge variant="outline" className="mb-2">
-                  {getEventTypeLabel(challenge.event_type)}
-                </Badge>
-                <h1 className="text-3xl font-bold">{challenge.challenge_name}</h1>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  <Badge variant="outline">
+                    {getEventTypeLabel(challengeData.event_type)}
+                  </Badge>
+                  <Badge variant="outline" className="bg-muted/60">
+                    {getTaskTypeLabel(challengeData.task_type)}
+                  </Badge>
+                  <Badge className={`${getStatusLabel(challengeData.status).color} text-white`}>
+                    {getStatusLabel(challengeData.status).label}
+                  </Badge>
+                  {challengeData.is_published && (
+                    <Badge variant="outline" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300">
+                      Published
+                    </Badge>
+                  )}
+                </div>
+                <h1 className="text-3xl font-bold">{challengeData.challenge_name}</h1>
               </div>
               
               <div className="flex gap-2">
@@ -227,17 +366,17 @@ export default function ChallengeDetail() {
               <div className="flex items-center gap-1 text-muted-foreground">
                 <Calendar className="h-4 w-4" />
                 <span>
-                  {format(new Date(challenge.start_date), 'MMM d, yyyy')} - {format(new Date(challenge.end_date), 'MMM d, yyyy')}
+                  {safeFormatDate(challengeData.start_date)} - {safeFormatDate(challengeData.end_date)}
                 </span>
               </div>
               <div className="flex items-center gap-1 text-muted-foreground">
                 <Users className="h-4 w-4" />
-                <span>{challenge.participant_count || 0} participants</span>
+                <span>{challengeData.participant_count || 0} participants</span>
               </div>
-              {challenge.target_contribution_count && (
+              {challengeData.target_contribution_count && (
                 <div className="flex items-center gap-1 text-muted-foreground">
                   <Award className="h-4 w-4" />
-                  <span>Goal: {challenge.target_contribution_count} contributions</span>
+                  <span>Goal: {challengeData.target_contribution_count} contributions</span>
                 </div>
               )}
             </div>
@@ -257,8 +396,17 @@ export default function ChallengeDetail() {
                   <CardTitle>Challenge Description</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="whitespace-pre-line">{challenge.description}</p>
+                  <p className="whitespace-pre-line">{challengeData.description}</p>
                 </CardContent>
+                {challengeData.image_url && (
+                  <CardFooter className="flex justify-center p-4">
+                    <img 
+                      src={challengeData.image_url} 
+                      alt={`${challengeData.challenge_name} banner`}
+                      className="max-h-64 object-contain rounded-md"
+                    />
+                  </CardFooter>
+                )}
               </Card>
               
               <div className="border rounded-lg p-6 text-center space-y-4 bg-muted/30">
@@ -266,8 +414,14 @@ export default function ChallengeDetail() {
                 <p className="text-muted-foreground">
                   Join this challenge and start contributing to earn points and rewards.
                 </p>
-                <Button size="lg" onClick={handleStartContributing}>
-                  Start Contributing
+                <Button 
+                  size="lg" 
+                  onClick={handleStartContributing}
+                  disabled={challengeData.status === ChallengeStatus.COMPLETED}
+                >
+                  {challengeData.status === ChallengeStatus.COMPLETED 
+                    ? 'Challenge Completed' 
+                    : joined ? 'Continue Contributing' : 'Start Contributing'}
                 </Button>
               </div>
             </TabsContent>
@@ -282,7 +436,7 @@ export default function ChallengeDetail() {
                 </CardHeader>
                 <CardContent>
                   <div className="whitespace-pre-line">
-                    {challenge.rules || "No specific rules have been provided for this challenge."}
+                    {formattedRules}
                   </div>
                 </CardContent>
               </Card>
@@ -296,7 +450,7 @@ export default function ChallengeDetail() {
                 </CardHeader>
                 <CardContent>
                   <div className="whitespace-pre-line">
-                    {challenge.evaluation_criteria || "No specific evaluation criteria have been provided for this challenge."}
+                    Contributions will be evaluated based on accuracy, completeness, and adherence to the challenge rules.
                   </div>
                 </CardContent>
               </Card>
@@ -312,7 +466,7 @@ export default function ChallengeDetail() {
                 </CardHeader>
                 <CardContent>
                   <div className="whitespace-pre-line">
-                    {challenge.prizes || "No specific prizes have been listed for this challenge."}
+                    {getRewardsSummary()}
                   </div>
                 </CardContent>
               </Card>
@@ -352,7 +506,7 @@ export default function ChallengeDetail() {
                           <div className="flex items-center gap-2 mb-1">
                             <span className="font-medium">{comment.user.username}</span>
                             <span className="text-xs text-muted-foreground">
-                              {format(new Date(comment.timestamp), 'MMM d, yyyy')}
+                              {safeFormatDate(comment.timestamp)}
                             </span>
                           </div>
                           <p>{comment.text}</p>
@@ -373,26 +527,36 @@ export default function ChallengeDetail() {
               <CardDescription>Leaderboard for this challenge</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {leaderboard.map((user, index) => (
-                  <div key={user.id} className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${
-                        index === 0 ? 'bg-yellow-100 text-yellow-700' :
-                        index === 1 ? 'bg-gray-100 text-gray-700' :
-                        index === 2 ? 'bg-amber-100 text-amber-700' :
-                        'bg-muted text-muted-foreground'
-                      }`}>
-                        {index + 1}
+              {isLoadingLeaderboard ? (
+                <div className="flex justify-center py-4">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : leaderboardData && leaderboardData.items && leaderboardData.items.length > 0 ? (
+                <div className="space-y-4">
+                  {leaderboardData.items.slice(0, 5).map((user: LeaderboardEntry, index: number) => (
+                    <div key={user.user_id} className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${
+                          index === 0 ? 'bg-yellow-100 text-yellow-700' :
+                          index === 1 ? 'bg-gray-100 text-gray-700' :
+                          index === 2 ? 'bg-amber-100 text-amber-700' :
+                          'bg-muted text-muted-foreground'
+                        }`}>
+                          {index + 1}
+                        </div>
+                        <span className="font-medium">{user.username || user.name}</span>
                       </div>
-                      <span className="font-medium">{user.username}</span>
+                      <div className="text-sm text-muted-foreground">
+                        {user.points} pts
+                      </div>
                     </div>
-                    <div className="text-sm text-muted-foreground">
-                      {user.points} pts
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-4 text-muted-foreground">
+                  No leaderboard data available yet
+                </div>
+              )}
             </CardContent>
           </Card>
           
@@ -406,17 +570,14 @@ export default function ChallengeDetail() {
                 <div className="flex justify-between mb-2">
                   <span className="text-sm">Participation</span>
                   <span className="text-sm text-muted-foreground">
-                    {challenge.participant_count || 0}/{challenge.target_contribution_count || 100}
+                    {challengeData.participant_count || 0}/{challengeData.target_contribution_count || 100}
                   </span>
                 </div>
                 <div className="h-2 bg-muted rounded-full overflow-hidden">
                   <div
                     className="h-full bg-primary"
                     style={{
-                      width: `${Math.min(
-                        100,
-                        ((challenge.participant_count || 0) / (challenge.target_contribution_count || 100)) * 100
-                      )}%`,
+                      width: `${getParticipationPercentage()}%`,
                     }}
                   ></div>
                 </div>
@@ -426,21 +587,14 @@ export default function ChallengeDetail() {
                 <div className="flex justify-between mb-2">
                   <span className="text-sm">Time Remaining</span>
                   <span className="text-sm text-muted-foreground">
-                    {Math.max(0, Math.ceil((new Date(challenge.end_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))} days
+                    {getTimeRemaining()} days
                   </span>
                 </div>
                 <div className="h-2 bg-muted rounded-full overflow-hidden">
                   <div
                     className="h-full bg-primary"
                     style={{
-                      width: `${Math.max(
-                        0,
-                        Math.min(
-                          100,
-                          ((new Date(challenge.end_date).getTime() - Date.now()) /
-                            (new Date(challenge.end_date).getTime() - new Date(challenge.start_date).getTime())) * 100
-                        )
-                      )}%`,
+                      width: `${getTimeProgressPercentage()}%`,
                     }}
                   ></div>
                 </div>
@@ -455,13 +609,20 @@ export default function ChallengeDetail() {
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                Join this challenge to start contributing and earning points. You can contribute by transcribing audio files, translating text, or validating others' work.
+                Join this challenge to start contributing and earn points. You can contribute 
+                {challengeData.task_type === TaskType.TRANSCRIPTION ? ' by transcribing audio files' : 
+                 challengeData.task_type === TaskType.TRANSLATION ? ' by translating text' : 
+                 challengeData.task_type === TaskType.ANNOTATION ? ' by annotating content' : 
+                 ' by completing tasks'}.
               </p>
               <Button
                 className="w-full" 
                 onClick={handleStartContributing}
+                disabled={challengeData.status === ChallengeStatus.COMPLETED}
               >
-                {joined ? 'Continue Contributing' : 'Join & Start Contributing'}
+                {challengeData.status === ChallengeStatus.COMPLETED 
+                  ? 'Challenge Completed' 
+                  : joined ? 'Continue Contributing' : 'Join & Start Contributing'}
               </Button>
             </CardContent>
           </Card>
