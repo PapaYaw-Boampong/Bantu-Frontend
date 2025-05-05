@@ -180,7 +180,7 @@ export default function CreateChallenge() {
     if (isEditing && challengeId && challenge) {
       // The API returns a structure where the challenge data might be nested
       // Extract the actual challenge data
-      const challengeData = (challenge as any).challenge || challenge;
+      const challengeData = challenge.challenge || challenge;
       console.log('Using challenge data:', challengeData);
       
       // Parse structured data from challenge if available
@@ -197,10 +197,10 @@ export default function CreateChallenge() {
           // Format from direct API response: {challenge, reward, rules}
           challengeRules = challenge.rules;
           console.log('Using rules array from direct API response:', challengeRules);
-        } else if (challenge.parsedRules && Array.isArray(challenge.parsedRules)) {
-          // Format from cache when previously processed
-          challengeRules = challenge.parsedRules;
-          console.log('Using parsedRules array from cache:', challengeRules);
+        // } else if (challenge.parsedRules && Array.isArray(challenge.parsedRules)) {
+        //   // Format from cache when previously processed
+        //   challengeRules = challenge.parsedRules;
+        //   console.log('Using parsedRules array from cache:', challengeRules);
         } else if (typeof challenge.rules === 'string') {
           // Rules might be a JSON string
           try {
@@ -250,10 +250,10 @@ export default function CreateChallenge() {
           // Direct API response format
           rewardData = challenge.reward;
           console.log('Using reward from direct API response:', rewardData);
-        } else if (challenge.parsedReward) {
-          // Format from cache when previously processed
-          rewardData = challenge.parsedReward;
-          console.log('Using parsedReward from cache:', rewardData);
+        // } else if (challenge.parsedReward) {
+        //   // Format from cache when previously processed
+        //   rewardData = challenge.parsedReward;
+        //   console.log('Using parsedReward from cache:', rewardData);
         } else if (typeof challenge.reward === 'string') {
           // Reward might be a JSON string
           try {
@@ -262,11 +262,11 @@ export default function CreateChallenge() {
           } catch (e) {
             console.error('Failed to parse reward string:', e);
           }
-        } else if (challenge.reward_configuration) {
+        } else if (challengeData.reward_configuration) {
           // Might be stored in reward_configuration
-          rewardData = typeof challenge.reward_configuration === 'string' 
-            ? JSON.parse(challenge.reward_configuration) 
-            : challenge.reward_configuration;
+          rewardData = typeof challengeData.reward_configuration === 'string' 
+            ? JSON.parse(challengeData.reward_configuration) 
+            : challengeData.reward_configuration;
           console.log('Using reward_configuration:', rewardData);
         }
         
@@ -405,7 +405,11 @@ export default function CreateChallenge() {
       setPendingNavigation('-1'); // Store where we want to navigate
       setShowUnsavedChangesDialog(true); // Show confirmation dialog
     } else {
-      navigate(-1);
+      if (isEditing) {
+        navigate(-2); // Go back twice if editing
+      } else {
+        navigate(-1); // Normal back
+      }
     }
   }, [hasUnsavedChanges, navigate]);
 
@@ -423,7 +427,11 @@ export default function CreateChallenge() {
   const confirmNavigation = useCallback(() => {
     setShowUnsavedChangesDialog(false);
     if (pendingNavigation === '-1') {
-      navigate(-1);
+      if (isEditing) {
+        navigate(-2); // Go back twice if editing
+      } else {
+        navigate(-1); // Normal back
+      }
     } else if (pendingNavigation) {
       navigate(pendingNavigation);
     }
@@ -643,7 +651,7 @@ export default function CreateChallenge() {
         // Include the ID and challenge_reward_id if we're editing an existing challenge
         ...(challengeId && { 
           id: challengeId,
-          challenge_reward_id: challenge?.challenge_reward_id  || undefined
+          challenge_reward_id: challenge?.challenge?.challenge_reward_id || undefined
         }),
       };
       
@@ -654,7 +662,7 @@ export default function CreateChallenge() {
         
         challengeReward = {
           // Only include id if we're editing an existing challenge
-          ...(challengeId && challenge?.challenge_reward_id && { id: challenge.challenge_reward_id }),
+          ...(challengeId && challenge?.challenge?.challenge_reward_id && { id: challenge.challenge.challenge_reward_id }),
           reward_type: serializedReward.reward_type,
           reward_distribution_type: serializedReward.reward_distribution_type,
           reward_value: serializedReward.reward_value
@@ -750,7 +758,7 @@ export default function CreateChallenge() {
         // Include the ID and challenge_reward_id if we're editing an existing challenge
         ...(challengeId && { 
           id: challengeId,
-          challenge_reward_id: challenge?.challenge_reward_id 
+          challenge_reward_id: challenge?.challenge?.challenge_reward_id 
         }),
       };
       
@@ -761,7 +769,7 @@ export default function CreateChallenge() {
         
         challengeReward = {
           // Only include id if we're editing an existing challenge
-          ...(challengeId && challenge?.challenge_reward_id && { id: challenge.challenge_reward_id }),
+          ...(challengeId && challenge?.challenge?.challenge_reward_id && { id: challenge.challenge.challenge_reward_id }),
           reward_type: serializedReward.reward_type,
           reward_distribution_type: serializedReward.reward_distribution_type,
           reward_value: serializedReward.reward_value
@@ -1434,7 +1442,7 @@ export default function CreateChallenge() {
                           });
                         }}
                         isLoading={loading}
-                        isPublished={isEditing && challenge?.is_published}
+                        isPublished={isEditing && challenge?.challenge?.is_published}
                       />
                     </div>
                   </CardContent>

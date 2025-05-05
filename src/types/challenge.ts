@@ -175,3 +175,10 @@ export interface LeaderboardPage {
   limit: number;
   has_next: boolean;
 }
+
+
+export interface DetailedChallengeResponseWrapper {
+  challenge: ChallengeDetailResponse;
+  reward: any;
+  rules: any[];
+}

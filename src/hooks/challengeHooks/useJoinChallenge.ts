@@ -4,11 +4,11 @@ import { challengeService } from '@/services/challengeService';
 export function useJoinChallenge() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ challengeId, userId }: { challengeId: string; userId: string }) => 
-      challengeService.join(challengeId, { user_id: userId }),
-    onSuccess: (_, { challengeId }) => {
-      queryClient.invalidateQueries({ queryKey: ['challenge', challengeId] });
+    mutationFn: ({ event_id, user_id }: { event_id: string; user_id: string }) => 
+      challengeService.join({ event_id, user_id }),
+    onSuccess: (_, { event_id }) => {
+      queryClient.invalidateQueries({ queryKey: ['challenge', event_id] });
       queryClient.invalidateQueries({ queryKey: ['your-challenges'] });
     },
   });
-} 
+}

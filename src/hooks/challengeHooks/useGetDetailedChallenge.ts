@@ -1,20 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
-import { ChallengeDetailResponse } from '@/types/challenge';
-import api from '@/lib/api';
+import { DetailedChallengeResponseWrapper } from '@/types/challenge';
+import { challengeService } from '@/services/challengeService';
 
-export interface DetailedChallengeResponseWrapper {
-  challenge: ChallengeDetailResponse;
-  reward: any;
-  rules: any[];
-}
+export type { DetailedChallengeResponseWrapper };
 
 export const useGetDetailedChallenge = (challengeId: string) => {
   return useQuery<DetailedChallengeResponseWrapper>({
     queryKey: ['challengeDetail', challengeId],
-    queryFn: async () => {
-      const response = await api.get(`/challenges/${challengeId}`);
-      return response.data;
+    queryFn: ({ queryKey }) => {
+      const [, id] = queryKey as [string, string];
+      return challengeService.get(id);
     },
     enabled: !!challengeId,
   });
-}; 
+};

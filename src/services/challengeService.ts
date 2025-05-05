@@ -5,7 +5,7 @@ import {
   ChallengeUpdate,
   ChallengeSummary,
   ChallengeParticipant,
-  ChallengeDetailResponse,
+  DetailedChallengeResponseWrapper,
   ChallengeRule,
   ChallengeRulesAdd,
   GetChallenges,
@@ -41,7 +41,7 @@ class ChallengeService {
   }
 
   // Get full challenge detail
-  async get(id: string): Promise<ChallengeDetailResponse> {
+  async get(id: string): Promise<DetailedChallengeResponseWrapper> {
     const res = await api.get(`${this.baseUrl}/detailed/${id}`);
     return res.data;
   }
@@ -59,10 +59,12 @@ class ChallengeService {
   }
 
   // Join a challenge
-  async join(id: string, payload: { user_id: string }): Promise<{ message: string }> {
-    const res = await api.post(`${this.baseUrl}/join/${id}`, payload);
+
+  async join(payload: { event_id: string; user_id: string }): Promise<{ message: string }> {
+    const res = await api.post(`${this.baseUrl}/join`, payload);
     return res.data;
   }
+
 
   // Leave a challenge
   async leave(id: string): Promise<{ message: string }> {

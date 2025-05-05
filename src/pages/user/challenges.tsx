@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
-import { EventType, TaskType, Challenge, GetChallenges } from '@/types/challenge';
+import { EventType, TaskType, Challenge, GetChallenges, ChallengeSummary } from '@/types/challenge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { format } from 'date-fns';
 import { useLanguages } from '@/hooks/languageHooks/useLanguages';
@@ -58,7 +58,7 @@ export default function PublicChallenges() {
   // Apply client-side search filtering
   const filteredChallenges = challenges.filter(challenge => {
     return challenge.challenge_name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-           (challenge.description && challenge.description.toLowerCase().includes(searchQuery.toLowerCase()));
+                         (challenge.description && challenge.description.toLowerCase().includes(searchQuery.toLowerCase()));
   });
 
   // Sort challenges client-side
@@ -85,7 +85,7 @@ export default function PublicChallenges() {
         return 'Unknown';
     }
   };
-  
+
   const getTaskTypeLabel = (type: TaskType) => {
     switch (type) {
       case TaskType.TRANSCRIPTION:
@@ -101,6 +101,32 @@ export default function PublicChallenges() {
 
   const handleViewChallenge = (challengeId: string) => {
     navigate(`/user/challenge/${challengeId}`);
+  };
+
+  // Generate a background color or pattern when no image is available
+  const getBackgroundStyle = (challenge: Challenge | ChallengeSummary) => {
+    if (challenge.image_url) {
+      return {
+        backgroundImage: `url(${challenge.image_url})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      };
+    } else {
+      // Generate a color based on the challenge name
+      const hash = challenge.challenge_name.split('').reduce((acc: number, char: string) => {
+        return char.charCodeAt(0) + ((acc << 5) - acc);
+      }, 0);
+      const h = Math.abs(hash % 360);
+      const s = 70 + (hash % 20); // Between 70-90
+      const l = 60 + (hash % 15); // Between 60-75
+      
+      return {
+        background: `hsl(${h}, ${s}%, ${l}%)`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      };
+    }
   };
 
   return (
@@ -211,19 +237,19 @@ export default function PublicChallenges() {
                 {sortedChallenges.map((challenge) => (
                   <Card key={challenge.id} className="overflow-hidden flex flex-col">
                     <div className="h-2 bg-primary w-full" />
-                    <div className="relative h-48 w-full">
-                      <img 
-                        src={challenge.image_url} 
-                        alt={challenge.challenge_name}
-                        className="w-full h-full object-cover"
-                      />
+                    <div className="relative h-48 w-full" style={getBackgroundStyle(challenge)}>
+                      {!challenge.image_url && (
+                        <span className="text-white font-bold text-xl">
+                          {challenge.challenge_name.substring(0, 2).toUpperCase()}
+                        </span>
+                      )}
                     </div>
                     <CardContent className="p-6 flex-grow">
                       <div className="flex justify-between items-start mb-4">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <Badge variant="outline">
-                            {getEventTypeLabel(challenge.event_type)}
-                          </Badge>
+                        <Badge variant="outline">
+                          {getEventTypeLabel(challenge.event_type)}
+                        </Badge>
                           <Badge variant="outline" className="bg-muted/60">
                             {getTaskTypeLabel(challenge.task_type)}
                           </Badge>
