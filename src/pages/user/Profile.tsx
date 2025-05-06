@@ -23,7 +23,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
+import { useToast } from '@/components/ui/use-toast';
 import { ProficiencyLevel, AddLanguageRequest, UserLanguage } from '@/types/language';
 import { useAuth } from '@/hooks/useAuth';
 

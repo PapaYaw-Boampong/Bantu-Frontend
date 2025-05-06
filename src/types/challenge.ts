@@ -119,6 +119,7 @@ export interface ChallengeDetailResponse extends ChallengeSummary {
   reward_configuration?: any;
   target_contribution_count?: number;
   language_id: string;
+  creator_id: string;
   challenge_reward_id?: string;
 }
 
@@ -155,6 +156,28 @@ export interface ChallengeRulesAdd {
   rules: ChallengeRule[];
 }
 
+export interface ChallengeStatsOut {
+  challenge_id: string;
+  task_type: 'transcription' | 'translation' | 'annotation';
+
+  participant_count: number;
+  contribution_count: number;
+  evaluation_count: number;
+
+  // Aggregated
+  avg_contribution_acceptance_score?: number;
+  avg_evaluation_acceptance_score?: number;
+  total_hours_speech?: number;
+  total_sentences_translated?: number;
+  total_tokens_produced?: number;
+
+  // Completion %
+  completion_percent: number;
+
+  // Optional UI: trend data, if added later
+  created_at: string;
+  updated_at: string;
+}
 
 // Define the expected shape of one leaderboard entry
 export interface LeaderboardEntry {
@@ -181,4 +204,26 @@ export interface DetailedChallengeResponseWrapper {
   challenge: ChallengeDetailResponse;
   reward: any;
   rules: any[];
+}
+
+export interface UserChallengeStatsOut {
+  user_id: string;
+  event_id: string;
+  rank: number | null;
+
+  // Always available
+  total_points: number;
+  contribution_count: number;
+  accepted_contributions: number;
+  evaluation_count: number;
+  accepted_evaluations: number;
+  created_at: string;
+  updated_at: string;
+
+  // Conditionally shown:
+  contribution_acceptance_score?: number;
+  evaluation_acceptance_score?: number;
+  total_hours_speech?: number;
+  total_sentences_translated?: number;
+  total_tokens_produced?: number;
 }

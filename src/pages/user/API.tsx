@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { Bot, LanguagesIcon, Mic, Loader2, AudioWaveform as Waveform, Trash2, Upload } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
+import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';

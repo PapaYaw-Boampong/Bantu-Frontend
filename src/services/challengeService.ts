@@ -11,6 +11,8 @@ import {
   GetChallenges,
   UserChallengeFilter,
   ChallengeSaveRequest,
+  ChallengeStatsOut,
+  UserChallengeStatsOut,
 } from '@/types/challenge';
 
 import { ChallengeStatus } from '@/types/challenge'; // if ChallengeStatus is exported separately
@@ -127,6 +129,20 @@ class ChallengeService {
     const res = await api.get(`${this.baseUrl}/summary`);
     return res.data;
   }
+
+  // Get challenge statistics (admin/creator view)
+  async getChallengeStats(challengeId: string): Promise<ChallengeStatsOut> {
+    const res = await api.get(`${this.baseUrl}/${challengeId}/stats`);
+    return res.data;
+  }
+
+
+   // Get challenge statistics (user view)
+   async getUserChallengeStats(challengeId: string): Promise<UserChallengeStatsOut> {
+    const res = await api.get(`${this.baseUrl}/${challengeId}/userstats`);
+    return res.data;
+  }
+
 
   // (Optional) Get my active participations
   async getMyParticipations(): Promise<ChallengeParticipant[]> {

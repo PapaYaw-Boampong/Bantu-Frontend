@@ -125,7 +125,7 @@ export function useAuth() {
     } finally {
       clearTokens();
       setUser(null);
-      navigate('/');
+      navigate('/welcome');
     }
   };
 

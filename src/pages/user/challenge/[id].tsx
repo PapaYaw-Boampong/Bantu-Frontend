@@ -20,14 +20,22 @@ import {
   Clock,
   Target,
   Info,
+  BarChart,
+  Activity,
+  CheckCircle,
+  FileText,
+  Timer,
+  Percent,
+  User,
 } from "lucide-react";
 import { useGetDetailedChallenge } from "@/hooks/challengeHooks/useGetDetailedChallenge";
 import { useGetChallengeLeaderboard } from "@/hooks/challengeHooks/useGetChallengeLeaderboard";
 import { useJoinChallenge } from "@/hooks/challengeHooks/useJoinChallenge";
 import { useLeaveChallenge } from "@/hooks/challengeHooks/useLeaveChallenge";
 import { useUserChallenges } from "@/hooks/challengeHooks/useUserChallenges";
+import { useGetChallengeStats } from "@/hooks/challengeHooks/useGetChallengeStats";
 import { useLanguages } from "@/hooks/languageHooks/useLanguages";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -51,28 +59,30 @@ import {
 } from "@/types/challenge";
 import { format } from "date-fns";
 import { RewardType } from "@/types/rewards";
+import { useGetUserChallengeStats } from "@/hooks/challengeHooks/useGetUserChallengeStats";
 
-// Extended interface to include additional properties we're using in the UI
-interface ExtendedChallenge {
-  id: string;
-  challenge_name: string;
-  description?: string;
-  event_type: EventType;
-  task_type: TaskType;
-  start_date: string;
-  end_date: string;
-  status: ChallengeStatus;
-  is_public: boolean;
-  is_published: boolean;
-  participant_count?: number;
-  target_contribution_count?: number;
-  image_url?: string;
-  // Additional properties we use in the UI
-  source_language?: string;
-  target_language?: string;
-  contribution_count?: number;
-  min_contributions_required?: number;
-}
+// // Extended interface to include additional properties we're using in the UI
+// interface ExtendedChallenge {
+//   id: string;
+//   challenge_name: string;
+//   description?: string;
+//   event_type: EventType;
+//   task_type: TaskType;
+//   start_date: string;
+//   end_date: string;
+//   status: ChallengeStatus;
+//   is_public: boolean;
+//   is_published: boolean;
+//   participant_count?: number;
+//   target_contribution_count?: number;
+//   image_url?: string;
+//   creator_id?: string;
+//   // Additional properties we use in the UI
+//   source_language?: string;
+//   target_language?: string;
+//   contribution_count?: number;
+//   min_contributions_required?: number;
+// }
 
 export default function ChallengeDetail() {
   const { id = "" } = useParams<{ id: string }>();
@@ -95,10 +105,23 @@ export default function ChallengeDetail() {
   const { mutateAsync: leaveChallenge, isPending: isLeaving } =
     useLeaveChallenge();
 
+  // Get challenge statistics (only for challenge creator/admin)
+  // Since ChallengeDetailResponse doesn't have creator_id directly, we'll assume admin access
+  // This would need to be properly implemented in a real app to check challenge ownership
+
   // Extract challenge data and treat it as the extended type
   const challengeData = challengeResponseData?.challenge;
   const rewardData = challengeResponseData?.reward;
   const rulesData = challengeResponseData?.rules || [];
+
+  const canViewStats = challengeData?.creator_id === user?.id || false; // Convert to boolean to avoid potential null values
+
+  const { data: challengeStats, isLoading: isLoadingStats } =
+    useGetChallengeStats(
+      id,
+      // Only enable this query if the user is an admin AND the challenge is published
+      canViewStats && !!challengeResponseData?.challenge?.is_published // Ensure this is also boolean
+    );
 
   const [joined, setJoined] = useState(false);
   const [commentText, setCommentText] = useState("");
@@ -116,6 +139,13 @@ export default function ChallengeDetail() {
       timestamp: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
     },
   ]);
+
+  // Add user stats hook after joined state is declared
+  const { data: userStats, isLoading: isLoadingUserStats } =
+    useGetUserChallengeStats(
+      id,
+      joined // Only fetch if user has joined the challenge
+    );
 
   useEffect(() => {
     if (id && userChallenges) {
@@ -142,32 +172,45 @@ export default function ChallengeDetail() {
       return;
     }
 
-    // If we're already in a loading state, don't allow another action
-    if (isJoining || isLeaving) return;
+    // // If we're already in a loading state, don't allow another action
+    // if (isJoining || isLeaving) return;
 
     try {
       if (!joined) {
         // Join the challenge
-        await joinChallenge({ event_id: id, user_id: user.id });
+        const response = await joinChallenge({
+          event_id: id,
+          user_id: user.id,
+        });
+
+        console.log("Join response:", response); // Add debug logging
 
         // Update local state
         setJoined(true);
 
-        toast({
-          title: "Joined Challenge",
-          description: `You have joined "${challengeData.challenge_name}"`,
-        });
+        // Use a slight delay for the toast to ensure the state update completes
+        setTimeout(() => {
+          toast({
+            title: "Joined Challenge",
+            description: `You have joined "${challengeData.challenge_name}"`,
+            duration: 3000, // Specify duration explicitly
+          });
+        }, 100);
       } else {
         // Leave the challenge
-        await leaveChallenge(id);
-
+        const response = await leaveChallenge(id);
+        console.log("Leave response:", response); // Add debug logging
         // Update local state
         setJoined(false);
 
-        toast({
-          title: "Left Challenge",
-          description: `You have left "${challengeData.challenge_name}"`,
-        });
+        // Use a slight delay for the toast
+        setTimeout(() => {
+          toast({
+            title: "Left Challenge",
+            description: `You have left "${challengeData.challenge_name}"`,
+            duration: 3000, // Specify duration explicitly
+          });
+        }, 100);
       }
     } catch (error) {
       console.error("Error joining/leaving challenge:", error);
@@ -421,9 +464,10 @@ export default function ChallengeDetail() {
   const loading =
     isLoading ||
     isLoadingUserChallenges ||
-    isJoining ||
-    isLeaving ||
-    isLoadingLanguages;
+    // isJoining ||
+    // isLeaving ||
+    isLoadingLanguages ||
+    (canViewStats && isLoadingStats);
 
   if (!challengeData || loading) {
     return (
@@ -569,6 +613,10 @@ export default function ChallengeDetail() {
               <TabsTrigger value="rules">Rules & Criteria</TabsTrigger>
               <TabsTrigger value="prizes">Prizes</TabsTrigger>
               <TabsTrigger value="discussion">Discussion</TabsTrigger>
+              {canViewStats && challengeData?.is_published && (
+                <TabsTrigger value="statistics">Statistics</TabsTrigger>
+              )}
+              {joined && <TabsTrigger value="mystats">My Stats</TabsTrigger>}
             </TabsList>
 
             <TabsContent value="overview" className="space-y-6">
@@ -792,229 +840,6 @@ export default function ChallengeDetail() {
               </Card> */}
             </TabsContent>
 
-            {/* <TabsContent value="prizes" className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Prizes & Rewards</CardTitle>
-                  <CardDescription>
-                    What you can earn for participating
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {!rewardData ? (
-                    <p>
-                      No specific prizes have been listed for this challenge.
-                    </p>
-                  ) : (
-                    <div className="space-y-6">
-                      {rewardData.reward_type === RewardType.CASH && (
-                        <div className="space-y-4">
-                          <div className="flex items-center gap-2">
-                            <DollarSign className="h-5 w-5 text-amber-500" />
-                            <h3 className="text-lg font-medium">Cash Reward</h3>
-                          </div>
-
-                          {rewardData.reward_distribution_type === "fixed" ? (
-                            <div className="bg-muted/30 p-4 rounded-md">
-                              <div className="flex items-center justify-between">
-                                <span>Fixed Prize</span>
-                                <span className="font-medium text-lg">
-                                  {rewardData.reward_value}{" "}
-                                  {rewardData.currency || "USD"}
-                                </span>
-                              </div>
-                              {rewardData.description && (
-                                <p className="text-sm text-muted-foreground mt-2">
-                                  {rewardData.description}
-                                </p>
-                              )}
-                            </div>
-                          ) : rewardData.reward_distribution_type ===
-                              "tiered" && rewardData.tiers ? (
-                            <div className="space-y-2">
-                              {rewardData.tiers.map(
-                                (tier: any, index: number) => (
-                                  <div
-                                    key={index}
-                                    className="bg-muted/30 p-4 rounded-md flex items-center justify-between"
-                                  >
-                                    <div className="flex items-center gap-2">
-                                      {index === 0 ? (
-                                        <Trophy className="h-5 w-5 text-yellow-500" />
-                                      ) : index === 1 ? (
-                                        <Medal className="h-5 w-5 text-gray-400" />
-                                      ) : index === 2 ? (
-                                        <Medal className="h-5 w-5 text-amber-700" />
-                                      ) : (
-                                        <Award className="h-5 w-5 text-primary" />
-                                      )}
-                                      <span>
-                                        {tier.label || `Rank ${index + 1}`}
-                                      </span>
-                                    </div>
-                                    <span className="font-medium">
-                                      {tier.amount}{" "}
-                                      {rewardData.currency || "USD"}
-                                    </span>
-                                  </div>
-                                )
-                              )}
-                            </div>
-                          ) : (
-                            <p>
-                              Cash reward details will be available upon
-                              joining.
-                            </p>
-                          )}
-                        </div>
-                      )}
-
-                      {rewardData.reward_type === RewardType.BADGE && (
-                        <div className="space-y-4">
-                          <div className="flex items-center gap-2">
-                            <BadgeCheck className="h-5 w-5 text-blue-500" />
-                            <h3 className="text-lg font-medium">
-                              Badge Reward
-                            </h3>
-                          </div>
-
-                          {rewardData.reward_distribution_type === "fixed" ? (
-                            <div className="bg-muted/30 p-4 rounded-md">
-                              <div className="flex flex-col">
-                                <span className="font-medium text-lg">
-                                  {rewardData.badge_name || "Challenge Badge"}
-                                </span>
-                                <span className="text-sm text-muted-foreground">
-                                  {rewardData.badge_description ||
-                                    "For completing the challenge"}
-                                </span>
-                              </div>
-                            </div>
-                          ) : rewardData.reward_distribution_type ===
-                              "tiered" && rewardData.tiers ? (
-                            <div className="space-y-2">
-                              {rewardData.tiers.map(
-                                (tier: any, index: number) => (
-                                  <div
-                                    key={index}
-                                    className="bg-muted/30 p-4 rounded-md"
-                                  >
-                                    <div className="flex items-center gap-2 mb-1">
-                                      {index === 0 ? (
-                                        <Trophy className="h-5 w-5 text-yellow-500" />
-                                      ) : index === 1 ? (
-                                        <Medal className="h-5 w-5 text-gray-400" />
-                                      ) : index === 2 ? (
-                                        <Medal className="h-5 w-5 text-amber-700" />
-                                      ) : (
-                                        <Award className="h-5 w-5 text-primary" />
-                                      )}
-                                      <span className="font-medium">
-                                        {tier.label || `Rank ${index + 1}`}
-                                      </span>
-                                    </div>
-                                    <p className="text-sm pl-7">
-                                      {tier.description ||
-                                        `Badge for achieving ${
-                                          tier.label || `rank ${index + 1}`
-                                        }`}
-                                    </p>
-                                  </div>
-                                )
-                              )}
-                            </div>
-                          ) : (
-                            <p>
-                              Badge reward details will be available upon
-                              joining.
-                            </p>
-                          )}
-                        </div>
-                      )}
-
-                      {rewardData.reward_type === RewardType.SWAG && (
-                        <div className="space-y-4">
-                          <div className="flex items-center gap-2">
-                            <ShoppingBag className="h-5 w-5 text-purple-500" />
-                            <h3 className="text-lg font-medium">SWAG Reward</h3>
-                          </div>
-
-                          {rewardData.reward_distribution_type === "fixed" ? (
-                            <div className="bg-muted/30 p-4 rounded-md">
-                              <div className="flex flex-col">
-                                <span className="font-medium text-lg">
-                                  {rewardData.swag_item || "Merchandise"}
-                                </span>
-                                <span className="text-sm text-muted-foreground">
-                                  {rewardData.swag_description ||
-                                    "For participating in the challenge"}
-                                </span>
-                              </div>
-                            </div>
-                          ) : rewardData.reward_distribution_type ===
-                              "tiered" && rewardData.tiers ? (
-                            <div className="space-y-2">
-                              {rewardData.tiers.map(
-                                (tier: any, index: number) => (
-                                  <div
-                                    key={index}
-                                    className="bg-muted/30 p-4 rounded-md"
-                                  >
-                                    <div className="flex items-center gap-2 mb-1">
-                                      {index === 0 ? (
-                                        <Trophy className="h-5 w-5 text-yellow-500" />
-                                      ) : index === 1 ? (
-                                        <Medal className="h-5 w-5 text-gray-400" />
-                                      ) : index === 2 ? (
-                                        <Medal className="h-5 w-5 text-amber-700" />
-                                      ) : (
-                                        <Gift className="h-5 w-5 text-primary" />
-                                      )}
-                                      <span className="font-medium">
-                                        {tier.name || `Rank ${index + 1}`}
-                                      </span>
-                                    </div>
-                                    <div className="text-sm pl-7">
-                                      <p>{tier.item || "SWAG Item"}</p>
-                                      {tier.description && (
-                                        <p className="text-muted-foreground">
-                                          {tier.description}
-                                        </p>
-                                      )}
-                                      {tier.coupon_code && (
-                                        <span className="mt-1 text-xs bg-secondary p-1 rounded inline-block">
-                                          Coupon: {tier.coupon_code}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                )
-                              )}
-                            </div>
-                          ) : (
-                            <p>
-                              SWAG reward details will be available upon
-                              joining.
-                            </p>
-                          )}
-                        </div>
-                      )}
-
-                      {rewardData.additional_info && (
-                        <div className="mt-4 pt-4 border-t">
-                          <h4 className="font-medium mb-2">
-                            Additional Information
-                          </h4>
-                          <p className="text-sm text-muted-foreground">
-                            {rewardData.additional_info}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent> */}
             <TabsContent value="prizes" className="space-y-6">
               <Card>
                 <CardHeader>
@@ -1030,68 +855,6 @@ export default function ChallengeDetail() {
                     </p>
                   ) : (
                     <div className="space-y-6">
-                      {/* Cash Reward Section */}
-                      {/* {rewardData.reward_type === RewardType.CASH && (
-                        <div className="space-y-4">
-                          <div className="flex items-center gap-2">
-                            <DollarSign className="h-5 w-5 text-amber-500" />
-                            <h3 className="text-lg font-medium">Cash Reward</h3>
-                          </div>
-                          {rewardData.reward_distribution_type === "fixed" ? (
-                            <div className="bg-muted/30 p-4 rounded-md">
-                              <div className="flex items-center justify-between">
-                                <span>Fixed Prize</span>
-                                <span className="font-medium text-lg">
-                                  {rewardData.reward_value.amount}{" "}
-                                  {rewardData.reward_value.currency || "USD"}
-                                </span>
-                              </div>
-                              
-                                <p className="text-sm text-muted-foreground mt-2">
-                                 Winner Takes All
-                                </p>
-                              
-                            </div>
-                          ) : rewardData.reward_distribution_type ===
-                              "tiered" && rewardData.tiers ? (
-                            <div className="space-y-2">
-                              {rewardData.reward_value.map(
-                                (tier: any, index: number) => (
-                                  <div
-                                    key={index}
-                                    className="bg-muted/30 p-4 rounded-md flex items-center justify-between"
-                                  >
-                                    <div className="flex items-center gap-2">
-                                      {index === 0 ? (
-                                        <Trophy className="h-5 w-5 text-yellow-500" />
-                                      ) : index === 1 ? (
-                                        <Medal className="h-5 w-5 text-gray-400" />
-                                      ) : index === 2 ? (
-                                        <Medal className="h-5 w-5 text-amber-700" />
-                                      ) : (
-                                        <Award className="h-5 w-5 text-primary" />
-                                      )}
-                                      <span>
-                                        {tier.label || `Rank ${index + 1}`}
-                                      </span>
-                                    </div>
-                                    <span className="font-medium">
-                                      {tier.cash.amount}{" "}
-                                      {tier.cash.currency || "USD"}
-                                    </span>
-                                  </div>
-                                )
-                              )}
-                            </div>
-                          ) : (
-                            <p>
-                              Cash reward details will be available upon
-                              joining.
-                            </p>
-                          )}
-                        </div>
-                      )} */}
-
                       {/* Cash Reward Section */}
                       {rewardData.reward_type === RewardType.CASH && (
                         <div className="space-y-4">
@@ -1114,7 +877,7 @@ export default function ChallengeDetail() {
                               </p>
                             </div>
                           ) : rewardData.reward_distribution_type ===
-                              "tiered" && rewardData.reward_value? (
+                              "tiered" && rewardData.reward_value ? (
                             <div className="space-y-2">
                               {/* Iterate over the tiers object */}
                               {Object.keys(rewardData.reward_value).map(
@@ -1177,39 +940,44 @@ export default function ChallengeDetail() {
                                 </span>
                               </div>
                             </div>
-                          ) : rewardData.reward_distribution_type === "tiered" && rewardData.reward_value ? (
+                          ) : rewardData.reward_distribution_type ===
+                              "tiered" && rewardData.reward_value ? (
                             <div className="space-y-2">
                               {/* Iterate over the badge tiers */}
-                              {Object.keys(rewardData.reward_value).filter(key => key !== "icon").map((tierKey: string, index: number) => {
-                                const tier = rewardData.reward_value[tierKey];
-                                return (
-                                  <div
-                                    key={index}
-                                    className="bg-muted/30 p-4 rounded-md flex items-center justify-between"
-                                  >
-                                    <div className="flex items-center gap-2 mb-1">
-                                      {index === 0 ? (
-                                        <Trophy className="h-5 w-5 text-yellow-500" />
-                                      ) : index === 1 ? (
-                                        <Medal className="h-5 w-5 text-gray-400" />
-                                      ) : index === 2 ? (
-                                        <Medal className="h-5 w-5 text-amber-700" />
-                                      ) : (
-                                        <Award className="h-5 w-5 text-primary" />
-                                      )}
-                                      <span className="font-medium">
-                                        {tier.name || `Rank ${index + 1}`}
-                                      </span>
+                              {Object.keys(rewardData.reward_value)
+                                .filter((key) => key !== "icon")
+                                .map((tierKey: string, index: number) => {
+                                  const tier = rewardData.reward_value[tierKey];
+                                  return (
+                                    <div
+                                      key={index}
+                                      className="bg-muted/30 p-4 rounded-md flex items-center justify-between"
+                                    >
+                                      <div className="flex items-center gap-2 mb-1">
+                                        {index === 0 ? (
+                                          <Trophy className="h-5 w-5 text-yellow-500" />
+                                        ) : index === 1 ? (
+                                          <Medal className="h-5 w-5 text-gray-400" />
+                                        ) : index === 2 ? (
+                                          <Medal className="h-5 w-5 text-amber-700" />
+                                        ) : (
+                                          <Award className="h-5 w-5 text-primary" />
+                                        )}
+                                        <span className="font-medium">
+                                          {tier.name || `Rank ${index + 1}`}
+                                        </span>
+                                      </div>
+                                      <p className="text-sm pl-7">
+                                        {tier.description ||
+                                          `Badge for achieving ${
+                                            tier.name || `rank ${index + 1}`
+                                          }`}
+                                      </p>
                                     </div>
-                                    <p className="text-sm pl-7">
-                                      {tier.description ||
-                                        `Badge for achieving ${tier.name || `rank ${index + 1}`}`}
-                                    </p>
-                                  </div>
-                                );
-                              })}
+                                  );
+                                })}
                             </div>
-                          )  : (
+                          ) : (
                             <p>
                               Badge reward details will be available upon
                               joining.
@@ -1355,6 +1123,461 @@ export default function ChallengeDetail() {
                 </CardContent>
               </Card>
             </TabsContent>
+
+            {canViewStats && challengeData?.is_published && (
+              <TabsContent value="statistics" className="space-y-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <BarChart className="h-5 w-5" />
+                      Challenge Statistics
+                    </CardTitle>
+                    <CardDescription>
+                      Key metrics and performance data for this challenge
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {isLoadingStats ? (
+                      <div className="flex justify-center p-8">
+                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                      </div>
+                    ) : !challengeStats ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <p>No statistics available for this challenge yet.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-8">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <Card className="bg-muted/40">
+                            <CardContent className="pt-6">
+                              <div className="flex items-start gap-3">
+                                <Users className="h-8 w-8 text-blue-500" />
+                                <div>
+                                  <p className="text-sm text-muted-foreground">
+                                    Participants
+                                  </p>
+                                  <p className="text-2xl font-bold">
+                                    {challengeStats.participant_count}
+                                  </p>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+
+                          <Card className="bg-muted/40">
+                            <CardContent className="pt-6">
+                              <div className="flex items-start gap-3">
+                                <FileText className="h-8 w-8 text-green-500" />
+                                <div>
+                                  <p className="text-sm text-muted-foreground">
+                                    Contributions
+                                  </p>
+                                  <p className="text-2xl font-bold">
+                                    {challengeStats.contribution_count}
+                                  </p>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+
+                          <Card className="bg-muted/40">
+                            <CardContent className="pt-6">
+                              <div className="flex items-start gap-3">
+                                <CheckCircle className="h-8 w-8 text-amber-500" />
+                                <div>
+                                  <p className="text-sm text-muted-foreground">
+                                    Evaluations
+                                  </p>
+                                  <p className="text-2xl font-bold">
+                                    {challengeStats.evaluation_count}
+                                  </p>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-4">
+                          <Card className="bg-muted/40">
+                            <CardHeader className="pb-2">
+                              <CardTitle className="text-base">
+                                Completion Progress
+                              </CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-sm text-muted-foreground">
+                                  Progress
+                                </span>
+                                <span className="text-sm font-medium">
+                                  {challengeStats.completion_percent}%
+                                </span>
+                              </div>
+                              <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-primary rounded-full"
+                                  style={{
+                                    width: `${challengeStats.completion_percent}%`,
+                                  }}
+                                />
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <Card className="bg-muted/40">
+                            <CardHeader className="pb-2">
+                              <CardTitle className="text-base">
+                                Quality Metrics
+                              </CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                              {challengeStats.avg_contribution_acceptance_score !==
+                                undefined && (
+                                <div>
+                                  <div className="flex justify-between text-sm mb-1">
+                                    <span className="text-muted-foreground">
+                                      Avg. Contribution Score
+                                    </span>
+                                    <span className="font-medium">
+                                      {(
+                                        challengeStats.avg_contribution_acceptance_score *
+                                        100
+                                      ).toFixed(1)}
+                                      %
+                                    </span>
+                                  </div>
+                                  <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+                                    <div
+                                      className="h-full bg-blue-500 rounded-full"
+                                      style={{
+                                        width: `${
+                                          challengeStats.avg_contribution_acceptance_score *
+                                          100
+                                        }%`,
+                                      }}
+                                    />
+                                  </div>
+                                </div>
+                              )}
+
+                              {challengeStats.avg_evaluation_acceptance_score !==
+                                undefined && (
+                                <div>
+                                  <div className="flex justify-between text-sm mb-1">
+                                    <span className="text-muted-foreground">
+                                      Avg. Evaluation Score
+                                    </span>
+                                    <span className="font-medium">
+                                      {(
+                                        challengeStats.avg_evaluation_acceptance_score *
+                                        100
+                                      ).toFixed(1)}
+                                      %
+                                    </span>
+                                  </div>
+                                  <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+                                    <div
+                                      className="h-full bg-green-500 rounded-full"
+                                      style={{
+                                        width: `${
+                                          challengeStats.avg_evaluation_acceptance_score *
+                                          100
+                                        }%`,
+                                      }}
+                                    />
+                                  </div>
+                                </div>
+                              )}
+                            </CardContent>
+                          </Card>
+
+                          <Card className="bg-muted/40">
+                            <CardHeader className="pb-2">
+                              <CardTitle className="text-base">
+                                Task-Specific Metrics
+                              </CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                              {challengeStats.task_type === "transcription" &&
+                                challengeStats.total_hours_speech !==
+                                  undefined && (
+                                  <div className="flex items-center justify-between">
+                                    <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                                      <Timer className="h-4 w-4" />
+                                      Total Hours of Speech
+                                    </span>
+                                    <span className="font-medium">
+                                      {challengeStats.total_hours_speech.toFixed(
+                                        1
+                                      )}{" "}
+                                      hours
+                                    </span>
+                                  </div>
+                                )}
+
+                              {challengeStats.task_type === "translation" &&
+                                challengeStats.total_sentences_translated !==
+                                  undefined && (
+                                  <div className="flex items-center justify-between">
+                                    <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                                      <FileText className="h-4 w-4" />
+                                      Total Sentences Translated
+                                    </span>
+                                    <span className="font-medium">
+                                      {challengeStats.total_sentences_translated.toLocaleString()}
+                                    </span>
+                                  </div>
+                                )}
+
+                              {challengeStats.task_type === "annotation" &&
+                                challengeStats.total_tokens_produced !==
+                                  undefined && (
+                                  <div className="flex items-center justify-between">
+                                    <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                                      <FileText className="h-4 w-4" />
+                                      Total Tokens Produced
+                                    </span>
+                                    <span className="font-medium">
+                                      {challengeStats.total_tokens_produced.toLocaleString()}
+                                    </span>
+                                  </div>
+                                )}
+
+                              <div className="flex items-center justify-between">
+                                <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                                  <Activity className="h-4 w-4" />
+                                  Last Updated
+                                </span>
+                                <span className="font-medium">
+                                  {safeFormatDate(challengeStats.updated_at)}
+                                </span>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            )}
+
+            {joined && (
+              <TabsContent value="mystats" className="space-y-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <User className="h-5 w-5" />
+                      My Challenge Statistics
+                    </CardTitle>
+                    <CardDescription>
+                      Your performance and contributions in this challenge
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {isLoadingUserStats ? (
+                      <div className="flex justify-center p-8">
+                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                      </div>
+                    ) : !userStats ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <p>No statistics available yet.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-8">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <Card className="bg-muted/40">
+                            <CardContent className="pt-6">
+                              <div className="flex items-start gap-3">
+                                <Award className="h-8 w-8 text-amber-500" />
+                                <div>
+                                  <p className="text-sm text-muted-foreground">
+                                    Total Points
+                                  </p>
+                                  <p className="text-2xl font-bold">
+                                    {userStats.total_points}
+                                  </p>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+
+                          <Card className="bg-muted/40">
+                            <CardContent className="pt-6">
+                              <div className="flex items-start gap-3">
+                                <FileText className="h-8 w-8 text-green-500" />
+                                <div>
+                                  <p className="text-sm text-muted-foreground">
+                                    Contributions
+                                  </p>
+                                  <p className="text-2xl font-bold">
+                                    {userStats.contribution_count}
+                                  </p>
+                                  <p className="text-sm text-muted-foreground">
+                                    {userStats.accepted_contributions} accepted
+                                  </p>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+
+                          <Card className="bg-muted/40">
+                            <CardContent className="pt-6">
+                              <div className="flex items-start gap-3">
+                                <CheckCircle className="h-8 w-8 text-blue-500" />
+                                <div>
+                                  <p className="text-sm text-muted-foreground">
+                                    Evaluations
+                                  </p>
+                                  <p className="text-2xl font-bold">
+                                    {userStats.evaluation_count}
+                                  </p>
+                                  <p className="text-sm text-muted-foreground">
+                                    {userStats.accepted_evaluations} accepted
+                                  </p>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <Card className="bg-muted/40">
+                            <CardHeader className="pb-2">
+                              <CardTitle className="text-base">
+                                Acceptance Rates
+                              </CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                              {userStats.contribution_acceptance_score !==
+                                undefined && (
+                                <div>
+                                  <div className="flex justify-between text-sm mb-1">
+                                    <span className="text-muted-foreground">
+                                      Contribution Acceptance
+                                    </span>
+                                    <span className="font-medium">
+                                      {(
+                                        userStats.contribution_acceptance_score *
+                                        100
+                                      ).toFixed(1)}
+                                      %
+                                    </span>
+                                  </div>
+                                  <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+                                    <div
+                                      className="h-full bg-blue-500 rounded-full"
+                                      style={{
+                                        width: `${
+                                          userStats.contribution_acceptance_score *
+                                          100
+                                        }%`,
+                                      }}
+                                    />
+                                  </div>
+                                </div>
+                              )}
+
+                              {userStats.evaluation_acceptance_score !==
+                                undefined && (
+                                <div>
+                                  <div className="flex justify-between text-sm mb-1">
+                                    <span className="text-muted-foreground">
+                                      Evaluation Acceptance
+                                    </span>
+                                    <span className="font-medium">
+                                      {(
+                                        userStats.evaluation_acceptance_score *
+                                        100
+                                      ).toFixed(1)}
+                                      %
+                                    </span>
+                                  </div>
+                                  <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+                                    <div
+                                      className="h-full bg-green-500 rounded-full"
+                                      style={{
+                                        width: `${
+                                          userStats.evaluation_acceptance_score *
+                                          100
+                                        }%`,
+                                      }}
+                                    />
+                                  </div>
+                                </div>
+                              )}
+                            </CardContent>
+                          </Card>
+
+                          <Card className="bg-muted/40">
+                            <CardHeader className="pb-2">
+                              <CardTitle className="text-base">
+                                Task-Specific Metrics
+                              </CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                              {challengeData.task_type === "transcription" &&
+                                userStats.total_hours_speech !== undefined && (
+                                  <div className="flex items-center justify-between">
+                                    <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                                      <Timer className="h-4 w-4" />
+                                      Total Hours of Speech
+                                    </span>
+                                    <span className="font-medium">
+                                      {userStats.total_hours_speech.toFixed(1)}{" "}
+                                      hours
+                                    </span>
+                                  </div>
+                                )}
+
+                              {challengeData.task_type === "translation" &&
+                                userStats.total_sentences_translated !==
+                                  undefined && (
+                                  <div className="flex items-center justify-between">
+                                    <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                                      <FileText className="h-4 w-4" />
+                                      Total Sentences Translated
+                                    </span>
+                                    <span className="font-medium">
+                                      {userStats.total_sentences_translated.toLocaleString()}
+                                    </span>
+                                  </div>
+                                )}
+
+                              {challengeData.task_type === "annotation" &&
+                                userStats.total_tokens_produced !==
+                                  undefined && (
+                                  <div className="flex items-center justify-between">
+                                    <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                                      <FileText className="h-4 w-4" />
+                                      Total Tokens Produced
+                                    </span>
+                                    <span className="font-medium">
+                                      {userStats.total_tokens_produced.toLocaleString()}
+                                    </span>
+                                  </div>
+                                )}
+
+                              <div className="flex items-center justify-between">
+                                <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                                  <Activity className="h-4 w-4" />
+                                  Last Updated
+                                </span>
+                                <span className="font-medium">
+                                  {safeFormatDate(userStats.updated_at)}
+                                </span>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            )}
           </Tabs>
         </div>
 

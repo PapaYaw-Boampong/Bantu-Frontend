@@ -38,7 +38,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLanguages } from "@/hooks/languageHooks/useLanguages";
 import { Language } from "@/types/language";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from '@/components/ui/use-toast';
 
 import { Calendar, Users } from "lucide-react";
 

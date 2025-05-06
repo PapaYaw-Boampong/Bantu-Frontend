@@ -55,7 +55,7 @@ function App() {
         <Toaster />
         <Routes>
           {/* Public routes */}
-          <Route path="/" element={<Welcome />} />
+          <Route path="/welcome" element={<Welcome />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/login" element={<Auth />} />
 

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useToast } from '@/hooks/use-toast';
+import { useToast } from '@/components/ui/use-toast';
 import { useGetUserLanguages } from '@/hooks/languageHooks/useGetUserLanguages';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
