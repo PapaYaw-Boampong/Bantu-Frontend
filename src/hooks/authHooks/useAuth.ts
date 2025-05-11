@@ -92,6 +92,11 @@ export function useAuth() {
     storeTokens(tokens);
     const profile = await fetchUserProfile();
     storeUserMeta(profile);
+
+    if (profile.role === 3) {
+      navigate('/admin/dashboard');
+      return;
+    }
     navigate('/dashboard');
   };
 
@@ -111,6 +116,10 @@ export function useAuth() {
     storeTokens(access_tokens);
     setUser(registeredUser);
     storeUserMeta(registeredUser);
+    if (registeredUser.role === 3) {
+      navigate('/admin/dashboard');
+      return;
+    }
     navigate('/dashboard');
   };
 

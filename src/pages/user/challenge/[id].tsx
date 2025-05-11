@@ -36,7 +36,7 @@ import { useUserChallenges } from "@/hooks/challengeHooks/useUserChallenges";
 import { useGetChallengeStats } from "@/hooks/challengeHooks/useGetChallengeStats";
 import { useLanguages } from "@/hooks/languageHooks/useLanguages";
 import { useToast } from '@/components/ui/use-toast';
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "@/hooks/authHooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";

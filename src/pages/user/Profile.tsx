@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useProfile } from '@/hooks/useProfile';
+import { useProfile } from '@/hooks/userHooks/useProfile';
 import { useGetUserLanguages } from '@/hooks/languageHooks/useGetUserLanguages';
 import { useAvailableLanguages } from '@/hooks/languageHooks/useAvailableLanguages';
 import { useAddLanguage } from '@/hooks/languageHooks/useAddLanguage';
@@ -25,7 +25,7 @@ import {
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { ProficiencyLevel, AddLanguageRequest, UserLanguage } from '@/types/language';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/hooks/authHooks/useAuth';
 
 export default function Profile() {
   const {

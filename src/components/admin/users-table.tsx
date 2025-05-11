@@ -38,7 +38,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
-import { useUsers } from "@/hooks/useUsers";
+import { useUsers } from "@/hooks/userHooks/useUsers";
 import { format } from "date-fns";
 
 export function UsersTable() {

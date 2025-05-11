@@ -117,14 +117,22 @@ const MOCK_CONTRIBUTIONS = {
 export default function ABTestingPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { data: userLanguages = [], isLoading: languagesLoading } = useGetUserLanguages();
+  const {
+    data: userLanguages = [],
+    isLoading: languagesLoading,
+    isError,
+    error,
+  } = useGetUserLanguages();
+
   const { challengeId, taskType: paramTaskType } = useParams<{ challengeId?: string, taskType?: string }>();
-  
   const [taskType, setTaskType] = useState<ContributionType>((paramTaskType as ContributionType) || 'translation');
   const [selectedLanguage, setSelectedLanguage] = useState('');
   const [currentPairIndex, setCurrentPairIndex] = useState(0);
   const [showHelpDialog, setShowHelpDialog] = useState(false);
   const [results, setResults] = useState<Array<{pairId: string, choice: 'A' | 'B' | 'same' | 'flag', reason?: string}>>([]);
+  const getLanguageNameById = (id: string): string | undefined => {
+    return userLanguages.find(lang => lang.language.id === id)?.language.name;
+  };
   
   // Get the appropriate data set based on task type
   const contributions = MOCK_CONTRIBUTIONS[taskType] || [];
@@ -234,11 +242,11 @@ export default function ABTestingPage() {
       {currentPair && (
         <ABTesting
           taskType={taskType}
-          language={selectedLanguage || "Not specified"}
-          contributionA={currentPair.pairA}
-          contributionB={currentPair.pairB}
-          sourceContent={currentPair.sourceContent}
-          onSubmit={handleSubmit}
+          languageId={selectedLanguage || "Not specified"}
+          language={getLanguageNameById(selectedLanguage) || "Not specified"}
+        
+
+
           className="animate-fade-in opacity-0"
         />
       )}
@@ -256,7 +264,7 @@ export default function ABTestingPage() {
           <div className="space-y-4 py-2">
             <h3 className="font-medium">Evaluating Contributions</h3>
             <ul className="list-disc space-y-2 ml-5 text-sm text-muted-foreground">
-              <li>Compare both contributions (A and B) carefully.</li>
+              <li> both contributions (A and B) carefully.</li>
               <li>Select which contribution is better based on:</li>
               <ul className="list-circle ml-5 mt-1 space-y-1">
                 <li>Accuracy (correctness of the translation/transcription)</li>

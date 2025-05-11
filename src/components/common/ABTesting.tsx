@@ -1,6 +1,8 @@
-import { useState, useRef } from 'react';
-import { ThumbsUp, Divide, Flag, Play, Pause, Volume2 } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
+import { useState, useRef, useEffect } from 'react';
+import { ThumbsUp, Divide, Flag, Play, Pause, Volume2, Loader2 } from 'lucide-react';
+import { useToast } from '@/components/ui/use-toast';
+import { useAssignABTest } from '@/hooks/evaluationHooks/useAssignABTest';
+import { useCastABTestVote } from '@/hooks/evaluationHooks/useCastABTestVote';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -28,6 +30,7 @@ import {
 } from '@/components/ui/select';
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
+import { ABTestAssignment } from '@/types/evaluation';
 
 export type ContributionType = 'translation' | 'transcription' | 'annotation';
 
@@ -43,33 +46,117 @@ interface Contribution {
 interface ABTestingProps {
   taskType: ContributionType;
   language: string;
-  contributionA: Contribution;
-  contributionB: Contribution;
-  sourceContent?: string;
-  onSubmit: (result: 'A' | 'B' | 'same' | 'flag', reason?: string, notes?: string) => void;
+  languageId: string;
   className?: string;
+  // New props for validation integration
+  externalTest?: ABTestAssignment | null;
+  validationMode?: boolean;
+  onVoteSubmitted?: (selection: 'A' | 'B' | 'same' | null) => void;
+  sourceContent?: string;
 }
 
 export default function ABTesting({
   taskType,
   language,
-  contributionA,
-  contributionB,
-  sourceContent,
-  onSubmit,
-  className
+  languageId,
+  className,
+  externalTest = null,
+  validationMode = false,
+  onVoteSubmitted,
+  sourceContent
 }: ABTestingProps) {
   const [selected, setSelected] = useState<'A' | 'B' | 'same' | null>(null);
   const [showFlagDialog, setShowFlagDialog] = useState(false);
   const [flagReason, setFlagReason] = useState('');
   const [flagNote, setFlagNote] = useState('');
   const [playingAudio, setPlayingAudio] = useState<'A' | 'B' | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [currentTest, setCurrentTest] = useState<ABTestAssignment | null>(null);
+  const [testBuffer, setTestBuffer] = useState<ABTestAssignment[]>([]);
+  const [hasStarted, setHasStarted] = useState(false);
+  const [simplifiedMode, setSimplifiedMode] = useState(false);
   
   // Audio refs for transcription mode
   const audioRefA = useRef<HTMLAudioElement>(null);
   const audioRefB = useRef<HTMLAudioElement>(null);
   
   const { toast } = useToast();
+  
+  // Hooks for AB Test functionality
+  const assignABTest = useAssignABTest();
+  const castABTestVote = useCastABTestVote();
+
+  // If external test is provided, use it
+  useEffect(() => {
+    if (externalTest) {
+      setCurrentTest(externalTest);
+      setHasStarted(true);
+      setSimplifiedMode(validationMode);
+    }
+  }, [externalTest, validationMode]);
+
+  const startTesting = () => {
+    if (!languageId || !taskType) {
+      toast({
+        title: "Missing information",
+        description: "Please select both a language and task type to continue.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setHasStarted(true);
+    if (!validationMode) {
+      loadABTests();
+    }
+  };
+  
+  const loadABTests = () => {
+    if (!languageId || !taskType) return;
+    
+    setIsLoading(true);
+    
+    // Load 3 AB tests at once
+    const fetchTests = async () => {
+      try {
+        const results: ABTestAssignment[] = [];
+        for (let i = 0; i < 3; i++) {
+          const result = await assignABTest.mutateAsync({
+            userId: 'current',
+            proficiencyLevel: 1
+          });
+          if (result) {
+            results.push(result);
+          }
+        }
+        
+        if (results.length > 0) {
+          // Store tests in buffer
+          setTestBuffer(results);
+          
+          // Set the first test as current
+          setCurrentTest(results[0]);
+        } else {
+          toast({
+            title: "No AB tests available",
+            description: "There are no AB tests available for this language right now.",
+            variant: "destructive",
+          });
+        }
+      } catch (error) {
+        console.error("Error assigning AB tests:", error);
+        toast({
+          title: "Error",
+          description: "Failed to load AB tests. Please try again.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchTests();
+  };
 
   const handleSubmit = () => {
     if (!selected) {
@@ -81,8 +168,60 @@ export default function ABTesting({
       return;
     }
     
-    onSubmit(selected, undefined, undefined);
-    setSelected(null);
+    if (!currentTest) {
+      toast({
+        title: "No test available",
+        description: "Please wait for a test to load.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setIsLoading(true);
+    
+    // If in validation mode, just return the result to parent
+    if (validationMode && onVoteSubmitted) {
+      onVoteSubmitted(selected);
+      setIsLoading(false);
+      return;
+    }
+    
+    // Determine which contribution IDs to select based on user choice
+    let selectedIds: string[] = [];
+    
+    if (selected === 'A') {
+      selectedIds = [currentTest.option_a.id];
+    } else if (selected === 'B') {
+      selectedIds = [currentTest.option_b.id];
+    } else if (selected === 'same') {
+      selectedIds = [currentTest.option_a.id, currentTest.option_b.id];
+    }
+    
+    castABTestVote.mutate({
+      pairId: currentTest.pair_id,
+      data: {
+        selected_contribution_ids: selectedIds,
+        contribution_type: taskType,
+        language_id: languageId
+      }
+    }, {
+      onSuccess: (result) => {
+        toast({
+          title: "Vote submitted",
+          description: "Your evaluation has been recorded. Thank you!",
+        });
+        moveToNextTest();
+      },
+      onError: (error) => {
+        console.error("Error submitting vote:", error);
+        toast({
+          title: "Error",
+          description: "Failed to submit your vote. Please try again.",
+          variant: "destructive",
+        });
+        setIsLoading(false);
+      }
+    });
   };
 
   const handleFlag = () => {
@@ -95,10 +234,92 @@ export default function ABTesting({
       return;
     }
     
-    onSubmit('flag', flagReason, flagNote);
-    setShowFlagDialog(false);
-    setFlagReason('');
-    setFlagNote('');
+    if (!currentTest) {
+      return;
+    }
+    
+    // Handle flagging by not selecting any contribution
+    castABTestVote.mutate({
+      pairId: currentTest.pair_id,
+      data: {
+        selected_contribution_ids: [],
+        contribution_type: taskType,
+        language_id: languageId
+      }
+    }, {
+      onSuccess: () => {
+        toast({
+          title: "Content flagged",
+          description: "Thank you for your feedback.",
+        });
+        setShowFlagDialog(false);
+        setFlagReason('');
+        setFlagNote('');
+        moveToNextTest();
+      },
+      onError: (error) => {
+        console.error("Error flagging content:", error);
+        toast({
+          title: "Error",
+          description: "Failed to submit your flag. Please try again.",
+          variant: "destructive",
+        });
+        setShowFlagDialog(false);
+      }
+    });
+  };
+  
+  const moveToNextTest = () => {
+    // Remove the current test from the buffer
+    const updatedBuffer = [...testBuffer];
+    updatedBuffer.shift();
+    setTestBuffer(updatedBuffer);
+    
+    // Reset selection state
+    setSelected(null);
+    setPlayingAudio(null);
+    
+    // If buffer is getting low (1 or 0 items left), fetch more tests
+    if (updatedBuffer.length <= 1) {
+      fetchMoreTests();
+    }
+    
+    // If there are still tests in the buffer, move to the next one
+    if (updatedBuffer.length > 0) {
+      setCurrentTest(updatedBuffer[0]);
+      setIsLoading(false);
+    } else {
+      setCurrentTest(null);
+      setIsLoading(false);
+    }
+  };
+  
+  const fetchMoreTests = () => {
+    if (!languageId || !taskType) return;
+    
+    const fetchTests = async () => {
+      try {
+        const results: ABTestAssignment[] = [];
+        for (let i = 0; i < 2; i++) {
+          const result = await assignABTest.mutateAsync({
+            userId: 'current',
+            proficiencyLevel: 1
+          });
+          if (result) {
+            results.push(result);
+          }
+        }
+        
+        if (results.length > 0) {
+          // Add new tests to the buffer
+          setTestBuffer(prevBuffer => [...prevBuffer, ...results]);
+        }
+      } catch (error) {
+        console.error("Error fetching more AB tests:", error);
+      }
+    };
+    
+    fetchTests();
   };
 
   const handlePlayAudio = (option: 'A' | 'B') => {
@@ -134,7 +355,13 @@ export default function ABTesting({
     setPlayingAudio(null);
   };
 
-  const renderContent = (contribution: Contribution, option: 'A' | 'B') => {
+  const renderContent = (option: 'A' | 'B') => {
+    if (!currentTest) return null;
+    
+    const contribution = option === 'A' ? 
+      { id: currentTest.option_a.id, content: currentTest.option_a.content } : 
+      { id: currentTest.option_b.id, content: currentTest.option_b.content };
+    
     switch (taskType) {
       case 'translation':
         return (
@@ -166,7 +393,7 @@ export default function ABTesting({
                 <div className="text-sm font-medium">Audio Sample {option}</div>
                 <audio 
                   ref={option === 'A' ? audioRefA : audioRefB}
-                  src={contribution.audioUrl || "https://assets.mixkit.co/music/preview/mixkit-tech-house-vibes-130.mp3"} 
+                  src={currentTest[option === 'A' ? 'option_a' : 'option_b'].content} 
                   onEnded={handleAudioEnded}
                   className="hidden"
                 />
@@ -180,19 +407,33 @@ export default function ABTesting({
           </div>
         );
       case 'annotation':
+        // Parse content for annotation to extract image URL if available
+        let imageUrl = '';
+        let textContent = contribution.content;
+        
+        try {
+          const contentData = JSON.parse(contribution.content);
+          if (contentData.imageUrl) {
+            imageUrl = contentData.imageUrl;
+            textContent = contentData.text || contribution.content;
+          }
+        } catch (e) {
+          // If parsing fails, use the content as is
+        }
+        
         return (
           <div className="space-y-4">
-            {contribution.imageUrl && (
+            {imageUrl && (
               <div className="w-full h-48 bg-muted flex items-center justify-center rounded-md overflow-hidden">
                 <img 
-                  src={contribution.imageUrl} 
+                  src={imageUrl} 
                   alt="Annotation content" 
                   className="w-full h-full object-contain"
                 />
               </div>
             )}
             <div className="p-4 rounded-md bg-muted h-full break-words whitespace-pre-wrap">
-              {contribution.content}
+              {textContent}
             </div>
           </div>
         );
@@ -205,10 +446,10 @@ export default function ABTesting({
     <Card className={cn("w-full", className)}>
       <CardHeader>
         <CardTitle className="text-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <span>Compare Contributions ({language})</span>
+          <span>Compare Contributions</span>
           <Dialog open={showFlagDialog} onOpenChange={setShowFlagDialog}>
             <DialogTrigger asChild>
-              <Button variant="outline" size="sm" className="text-destructive w-full sm:w-auto">
+              <Button variant="outline" size="sm" className="text-destructive w-full sm:w-auto" disabled={!hasStarted || !currentTest}>
                 <Flag className="h-4 w-4 mr-2" />
                 Flag Issues
               </Button>
@@ -255,96 +496,148 @@ export default function ABTesting({
       </CardHeader>
       
       <CardContent className="space-y-6">
-        {/* Source content (always displayed for transcription, optional for others) */}
-        {(sourceContent || taskType === 'transcription') && (
-          <div className="space-y-2">
-            <h3 className="text-sm font-medium">Source Content</h3>
-            <div className="p-4 rounded-md bg-muted/50 border border-border">
-              <p>{taskType === 'transcription' ? "Listen to both audio samples and compare which one better transcribes this text:" : sourceContent}</p>
-              <p className="mt-2 font-medium">{taskType === 'transcription' ? sourceContent : ""}</p>
-            </div>
+        {!languageId || !taskType ? (
+          <div className="flex flex-col items-center justify-center py-12">
+            <p className="text-muted-foreground mb-4">Welcome to Project Bantu </p>
+            <p className="text-muted-foreground mb-4">Select one of your Interested Languages & A Task type to kick start</p>
           </div>
+        ) : !hasStarted ? (
+          <div className="flex flex-col items-center justify-center py-12">
+            <p className="text-muted-foreground mb-4">Ready to start A/B Testing for {language} {taskType}?</p>
+            <Button onClick={startTesting}>
+              Start A/B Testing
+            </Button>
+          </div>
+        ) : isLoading ? (
+          <div className="flex flex-col items-center justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
+            <p className="text-muted-foreground">Loading comparison tasks...</p>
+          </div>
+        ) : !currentTest ? (
+          <div className="flex flex-col items-center justify-center py-12">
+            <p className="text-muted-foreground mb-4">No comparison tasks available.</p>
+            <Button onClick={loadABTests} disabled={!languageId || !taskType || validationMode}>
+              Try Again
+            </Button>
+          </div>
+        ) : (
+          <>
+            {/* Source content (displayed for validation flows or transcription) */}
+            {(sourceContent || taskType === 'transcription') && (
+              <div className="space-y-2">
+                <h3 className="text-sm font-medium">Source Content</h3>
+                <div className="p-4 rounded-md bg-muted/50 border border-border">
+                  {taskType === 'transcription' ? (
+                    <>
+                      <p>Listen to both audio samples and compare which one better transcribes this text:</p>
+                      <p className="mt-2 font-medium">{sourceContent || (currentTest.option_a.content)}</p>
+                    </>
+                  ) : (
+                    <p className="mt-2 font-medium">{sourceContent}</p>
+                  )}
+                </div>
+              </div>
+            )}
+            
+            {/* Contributions side by side with vs divider */}
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-8">
+              {/* Option A */}
+              <div className="md:col-span-2">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-base font-medium">Option A</h3>
+                  <Button
+                    variant={selected === 'A' ? 'default' : 'outline'}
+                    size="sm"
+                    className={cn(
+                      "w-28",
+                      selected === 'A' ? "bg-green-600 hover:bg-green-700" : ""
+                    )}
+                    onClick={() => setSelected('A')}
+                  >
+                    <ThumbsUp className="h-4 w-4 mr-2" />
+                    Better
+                  </Button>
+                </div>
+                {renderContent('A')}
+              </div>
+              
+              {/* VS Divider */}
+              <div className="md:col-span-1 flex flex-row md:flex-col items-center justify-center">
+                <div className="hidden md:flex h-full items-center">
+                  <Separator orientation="vertical" className="h-full" />
+                </div>
+                <div className="md:hidden w-full">
+                  <Separator className="my-4" />
+                </div>
+                <div className="px-4 py-2 bg-muted rounded-full text-center font-bold text-sm">VS</div>
+                <div className="hidden md:flex h-full items-center">
+                  <Separator orientation="vertical" className="h-full" />
+                </div>
+                <div className="md:hidden w-full">
+                  <Separator className="my-4" />
+                </div>
+              </div>
+              
+              {/* Option B */}
+              <div className="md:col-span-2">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-base font-medium">Option B</h3>
+                  <Button
+                    variant={selected === 'B' ? 'default' : 'outline'}
+                    size="sm"
+                    className={cn(
+                      "w-28",
+                      selected === 'B' ? "bg-green-600 hover:bg-green-700" : ""
+                    )}
+                    onClick={() => setSelected('B')}
+                  >
+                    <ThumbsUp className="h-4 w-4 mr-2" />
+                    Better
+                  </Button>
+                </div>
+                {renderContent('B')}
+              </div>
+            </div>
+          </>
         )}
-        
-        {/* Contributions side by side with vs divider */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-8">
-          {/* Option A */}
-          <div className="md:col-span-2">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-base font-medium">Option A</h3>
-              <Button
-                variant={selected === 'A' ? 'default' : 'outline'}
-                size="sm"
-                className={cn(
-                  "w-28",
-                  selected === 'A' ? "bg-green-600 hover:bg-green-700" : ""
-                )}
-                onClick={() => setSelected('A')}
-              >
-                <ThumbsUp className="h-4 w-4 mr-2" />
-                Better
-              </Button>
-            </div>
-            {renderContent(contributionA, 'A')}
-          </div>
-          
-          {/* VS Divider */}
-          <div className="md:col-span-1 flex flex-row md:flex-col items-center justify-center">
-            <div className="hidden md:flex h-full items-center">
-              <Separator orientation="vertical" className="h-full" />
-            </div>
-            <div className="md:hidden w-full">
-              <Separator className="my-4" />
-            </div>
-            <div className="px-4 py-2 bg-muted rounded-full text-center font-bold text-sm">VS</div>
-            <div className="hidden md:flex h-full items-center">
-              <Separator orientation="vertical" className="h-full" />
-            </div>
-            <div className="md:hidden w-full">
-              <Separator className="my-4" />
-            </div>
-          </div>
-          
-          {/* Option B */}
-          <div className="md:col-span-2">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-base font-medium">Option B</h3>
-              <Button
-                variant={selected === 'B' ? 'default' : 'outline'}
-                size="sm"
-                className={cn(
-                  "w-28",
-                  selected === 'B' ? "bg-green-600 hover:bg-green-700" : ""
-                )}
-                onClick={() => setSelected('B')}
-              >
-                <ThumbsUp className="h-4 w-4 mr-2" />
-                Better
-              </Button>
-            </div>
-            {renderContent(contributionB, 'B')}
-          </div>
-        </div>
       </CardContent>
-  
       
       <CardFooter className="flex flex-col sm:flex-row justify-between pt-10 gap-4">
-        <Button
-          variant={selected === 'same' ? 'default' : 'outline'}
-          onClick={() => setSelected('same')}
-          className="w-full sm:w-auto"
-        >
-          <Divide className="h-4 w-4 mr-2" />
-          Equally Good
-        </Button>
+        {!simplifiedMode && (
+          <Button
+            variant={selected === 'same' ? 'default' : 'outline'}
+            onClick={() => setSelected('same')}
+            className="w-full sm:w-auto"
+            disabled={isLoading || !currentTest || !hasStarted}
+          >
+            <Divide className="h-4 w-4 mr-2" />
+            Equally Good
+          </Button>
+        )}
         
-        <Button 
-          onClick={handleSubmit}
-          className="w-full sm:w-auto"
-        >
-          Submit Evaluation
-        </Button>
+        <div className="flex items-center gap-3">
+          {testBuffer.length > 0 && !validationMode && (
+            <span className="text-sm text-muted-foreground">
+              {testBuffer.length} test{testBuffer.length !== 1 ? "s" : ""} left
+            </span>
+          )}
+          <Button 
+            onClick={handleSubmit}
+            className="w-full sm:w-auto"
+            disabled={isLoading || !currentTest || !selected || !hasStarted}
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Loading...
+              </>
+            ) : "Submit Evaluation"}
+          </Button>
+        </div>
       </CardFooter>
     </Card>
   );
-} 
+}
+
+// Add static properties to the component
+ABTesting.setTest = (test: ABTestAssignment, simplified = false) => {}; 

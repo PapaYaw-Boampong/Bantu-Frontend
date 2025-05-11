@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { MoreHorizontal, Edit, Trash2, Award } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
-import { useToast } from '@/hooks/use-toast';
+import { useToast } from '@/hooks/uiHooks/use-toast';
 import { useChallenges } from '@/hooks/challengeHooks/useChallenges';
 import { Challenge, EventType } from '@/types/challenge';
 

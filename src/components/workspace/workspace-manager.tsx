@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { useToast } from '@/hooks/use-toast';
+import { useToast } from '@/hooks/uiHooks/use-toast';
 import { useChallenges } from '@/hooks/challengeHooks/useChallenges';
 import { useLanguage } from '@/hooks/languageHooks/useLanguage';
 import { Button } from '@/components/ui/button';

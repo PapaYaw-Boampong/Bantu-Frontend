@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { useNavigate, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "@/hooks/authHooks/useAuth";
 import { useState, useEffect } from "react";
 
 import {
@@ -37,6 +37,23 @@ interface AppSidebarProps {
   onCollapsedChange: (collapsed: boolean) => void;
 }
 
+export function getStoredUserRole(): number | null {
+  const raw = localStorage.getItem('user_meta'); // or use USER_META_KEY if imported
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (typeof parsed.role === 'number') {
+      return parsed.role;
+    }
+    return null;
+  } catch (e) {
+    console.error('Failed to parse userMeta from localStorage', e);
+    return null;
+  }
+}
+
+
 export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -44,10 +61,8 @@ export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps) {
   const [userRole, setUserRole] = useState<number | null>(null);
 
   useEffect(() => {
-    const storedRole = localStorage.getItem('role');
-    if (storedRole) {
-      setUserRole(Number(storedRole));
-    }
+    const role = getStoredUserRole();
+    setUserRole(role);
   }, []);
 
   // Determine if user is admin based on role
@@ -160,17 +175,11 @@ export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps) {
       label: "Settings",
       path: "/admin/settings",
     },
-    // // You can still include some base user items if needed
-    // {
-    //   icon: User,
-    //   label: "My Profile",
-    //   path: "/profile",
-    // },
   ];
 
   // Use the actual user role from localStorage
-  // const displayMenuItems = isAdmin ? adminMenuItems : baseMenuItems;
-  const displayMenuItems =baseMenuItems;
+  const displayMenuItems = isAdmin ? adminMenuItems : baseMenuItems;
+  // const displayMenuItems =baseMenuItems;
 
   const handleSignOut = () => {
     signOut();

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Mic, Square, Trash2, Play, Pause, Volume2, VolumeX, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -12,22 +12,30 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { useToast } from '@/hooks/use-toast';
+import { useToast } from '@/hooks/uiHooks/use-toast';
 import WaveSurfer from 'wavesurfer.js';
 import { cn } from '@/lib/utils';
 
 type RecordingStatus = 'idle' | 'countdown' | 'recording' | 'paused' | 'stopped';
 type AudioQuality = 'good' | 'low' | 'high' | 'unknown';
 
+// Add this export type for the ref
+export type AudioRecorderRef = {
+  reset: () => void;
+};
+
 interface AudioRecorderProps {
   onRecordingComplete?: (audioBlob: Blob) => void;
   countdownSeconds?: number;
+  disabled?: boolean;
 }
 
-const AudioRecorder = ({
+// Convert to forwardRef
+const AudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderProps>(({
   onRecordingComplete,
   countdownSeconds = 3,
-}: AudioRecorderProps) => {
+  disabled = false,
+}, ref) => {
   const [status, setStatus] = useState<RecordingStatus>('idle');
   const [audioQuality, setAudioQuality] = useState<AudioQuality>('unknown');
   const [countdown, setCountdown] = useState(countdownSeconds);
@@ -127,6 +135,8 @@ const AudioRecorder = ({
 
   // Start countdown before recording
   const handleStartRecording = useCallback(() => {
+    if (disabled) return;
+    
     setStatus('countdown');
     setCountdown(countdownSeconds);
     
@@ -140,7 +150,7 @@ const AudioRecorder = ({
         return prev - 1;
       });
     }, 1000);
-  }, [countdownSeconds]);
+  }, [countdownSeconds, disabled]);
 
   // Start actual recording
   const startRecording = useCallback(async () => {
@@ -321,8 +331,48 @@ const AudioRecorder = ({
     }
   };
 
+  // Expose methods to parent component via ref
+  useImperativeHandle(ref, () => ({
+    reset: () => {
+      // Reset the component state
+      setStatus('idle');
+      setAudioBlob(null);
+      setRecordingTime(0);
+      setVolume(0);
+      setAudioQuality('unknown');
+      
+      // Stop any active recording
+      if (status === 'recording' || status === 'paused') {
+        stopMediaTracks();
+        if (recordingIntervalRef.current) {
+          clearInterval(recordingIntervalRef.current);
+          recordingIntervalRef.current = null;
+        }
+      }
+      
+      // Clear any ongoing countdown
+      if (status === 'countdown' && countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+        countdownIntervalRef.current = null;
+        setCountdown(countdownSeconds);
+      }
+      
+      // Clear audio visualization
+      if (wavesurferRef.current) {
+        try {
+          wavesurferRef.current.empty();
+        } catch (e) {
+          console.warn('Error clearing waveform:', e);
+        }
+      }
+      
+      // Clear audio chunks
+      audioChunksRef.current = [];
+    }
+  }));
+
   return (
-    <div className="space-y-4">
+    <div className={cn("space-y-4", disabled && "opacity-70 pointer-events-none")}>
       {/* Countdown overlay */}
       {status === 'countdown' && (
         <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-10 rounded-md">
@@ -486,6 +536,6 @@ const AudioRecorder = ({
       </div>
     </div>
   );
-};
+});
 
 export default AudioRecorder; 
