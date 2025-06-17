@@ -1,7 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { contributionService } from '@/services/contributionService';
 import { 
-  Contribution, 
   ContributionCreate, 
   ContributionType 
 } from '@/types/contribution';
@@ -28,17 +27,17 @@ export function useCreateCustomContribution() {
         challengeId
       );
     },
-    onSuccess: (newContribution: Contribution) => {
-      // Invalidate relevant queries
-      queryClient.invalidateQueries({ queryKey: ['contributions'] });
-      queryClient.invalidateQueries({ queryKey: ['contributionStats'] });
+    // onSuccess: (newContribution: Contribution) => {
+    //   // Invalidate relevant queries
+    //   queryClient.invalidateQueries({ queryKey: ['contributions'] });
+    //   queryClient.invalidateQueries({ queryKey: ['contributionStats'] });
       
-      // If this contribution is part of a challenge, invalidate challenge data
-      if (newContribution.challenge_id) {
-        queryClient.invalidateQueries({ 
-          queryKey: ['challenges', newContribution.challenge_id] 
-        });
-      }
-    },
+    //   // If this contribution is part of a challenge, invalidate challenge data
+    //   if (newContribution.challenge_id) {
+    //     queryClient.invalidateQueries({ 
+    //       queryKey: ['challenges', newContribution.challenge_id] 
+    //     });
+    //   }
+    // },
   });
 } 

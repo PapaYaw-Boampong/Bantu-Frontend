@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 
 function useAutoScroll(interval = 7000, scrollAmount = 300) {
-  const carouselRef = useRef(null);
+  const carouselRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const scrollCarousel = () => {

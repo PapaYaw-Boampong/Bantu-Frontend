@@ -2,34 +2,38 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { evaluationService } from '@/services/evaluationService';
 
 interface AssignABTestParams {
-  userId: string;
   proficiencyLevel?: number;
   abTestId?: string;
+  batch_size?: number;
 }
 
-export function useAssignABTest() {
+export function useAssignABTests() {
   const queryClient = useQueryClient();
   
   return useMutation({
     mutationFn: async ({
-      userId,
-      proficiencyLevel = 1,
+      proficiencyLevel = 3,
+      batch_size = 3,
       abTestId,
     }: AssignABTestParams) => {
       return await evaluationService.assignABTest(
-        userId,
         proficiencyLevel,
+        batch_size,
         abTestId
       );
     },
-    onSuccess: (assignment) => {
-      // Invalidate any global lists of assigned AB tests
+    onSuccess: (assignments) => {
       queryClient.invalidateQueries({ queryKey: ['assignedABTests'] });
-      
-      // Cache the assignment for quick access
-      if (assignment && assignment.pair_id) {
-        queryClient.setQueryData(['abTestAssignment', assignment.pair_id], assignment);
+     
+      if (Array.isArray(assignments)) {
+        assignments.forEach((assignment) => {
+          if (assignment?.pair_id) {
+            queryClient.setQueryData(['abTestAssignment', assignment.pair_id], assignment);
+          }
+        });
       }
     },
+
   });
+
 } 

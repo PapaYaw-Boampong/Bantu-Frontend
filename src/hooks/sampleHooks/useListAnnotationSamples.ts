@@ -8,6 +8,7 @@ interface AnnnotationSamplesParams {
   active?: boolean;
   skip?: number;
   limit?: number;
+  buffer?: string;
 }
 
 export function useListAnnotationSamples({
@@ -15,8 +16,9 @@ export function useListAnnotationSamples({
   languageId,
   category,
   active,
+  buffer,
   skip = 0,
-  limit = 20,
+  limit = 10,
 }: AnnnotationSamplesParams = {}) {
   return useQuery({
     queryKey: ['translationSeeds', { seedId, languageId, category, active, skip, limit }],
@@ -25,11 +27,12 @@ export function useListAnnotationSamples({
         seedId,
         languageId,
         active,
+        buffer,
         skip,
         limit
       );
     },
     enabled: !!languageId,
-    staleTime: 3 * 60 * 1000, // 5 minutes
+    staleTime: Infinity
   });
 } 

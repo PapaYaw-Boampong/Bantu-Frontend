@@ -18,7 +18,8 @@ export default function ModelsPage() {
       </div>
       
       <div className="animate-fade-up [animation-delay:300ms] opacity-0 w-full overflow-x-auto">
-        <ModelsTable />
+        {/* <ModelsTable /> */}
+        
       </div>
     </div>
   );

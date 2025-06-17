@@ -109,7 +109,7 @@ export function UsersTable() {
                 </TableCell>
                 <TableCell>
                   <Badge variant="outline">
-                    {user.role === 1 ? "Admin" : "User"}
+                    {user.role === 3 ? "Admin" : "User"}
                   </Badge>
                 </TableCell>
                 <TableCell>

@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { useNavigate, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { useAuth } from "@/hooks/authHooks/useAuth";
+// import { useAuth } from "@/hooks/authHooks/useAuth";
 import { useState, useEffect } from "react";
 
 import {
@@ -30,6 +30,7 @@ import {
   BadgeCheckIcon,
   Image,
   OptionIcon,
+  Upload,
 } from "lucide-react";
 
 interface AppSidebarProps {
@@ -57,7 +58,7 @@ export function getStoredUserRole(): number | null {
 export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { signOut, user } = useAuth();
+  // const { signOut, user } = useAuth();
   const [userRole, setUserRole] = useState<number | null>(null);
 
   useEffect(() => {
@@ -122,16 +123,6 @@ export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps) {
       path: "/user/rewards",
     },
     {
-      icon: Bot,
-      label: "APIs",
-      path: "/api",
-    },
-    {
-      icon: FileText,
-      label: "Documentation",
-      path: "/docs",
-    },
-    {
       icon: User,
       label: "Profile",
       path: "/profile",
@@ -160,15 +151,16 @@ export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps) {
       label: "Users",
       path: "/admin/users",
     },
-    {
-      icon: Brain,
-      label: "Models",
-      path: "/admin/models",
-    },
+
     {
       icon: Languages,
       label: "Languages",
       path: "/admin/languages",
+    },
+    {
+      icon: Upload,
+      label: "Upload CSV",
+      path: "/admin/csvupload",
     },
     {
       icon: Settings,
@@ -177,15 +169,36 @@ export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps) {
     },
   ];
 
+  const storage = [
+    {
+      icon: Brain,
+      label: "Models",
+      path: "/admin/models",
+    },
+
+    {
+      icon: Bot,
+      label: "APIs",
+      path: "/api",
+    },
+    {
+      icon: FileText,
+      label: "Documentation",
+      path: "/docs",
+    },
+
+
+  ]
+
   // Use the actual user role from localStorage
   const displayMenuItems = isAdmin ? adminMenuItems : baseMenuItems;
   // const displayMenuItems =baseMenuItems;
 
-  const handleSignOut = () => {
-    signOut();
-    localStorage.removeItem('role');
-    navigate("/");
-  };
+  // const handleSignOut = () => {
+  //   signOut();
+  //   localStorage.removeItem('role');
+  //   navigate("/");
+  // };
 
   // Determine if labels should be shown
   const showLabels = !collapsed;
@@ -219,7 +232,7 @@ export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps) {
           );
         })}
 
-        {/* Sign Out Button */}
+        {/* Sign Out Button
         <div className="pt-4 mt-4 border-t border-border">
           <Button
             variant="ghost"
@@ -232,7 +245,7 @@ export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps) {
             <LogOut className={cn("h-5 w-5", showLabels ? "mr-2" : "mr-0")} />
             {showLabels && <span>Sign Out</span>}
           </Button>
-        </div>
+        </div> */}
       </nav>
     </aside>
   );

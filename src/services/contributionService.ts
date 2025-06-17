@@ -2,8 +2,6 @@ import api from '@/lib/api';
 import {
   Contribution,
   ContributionCreate,
-  ContributionUpdate,
-  ContributionFilter,
   ContributionStats,
   ContributionType
 } from '@/types/contribution';
@@ -17,7 +15,8 @@ class ContributionService {
     sampleId: string,
     contributionType: ContributionType,
     data: ContributionCreate,
-    challengeId?: string
+    challengeId?: string,
+    sample_text?: string,
   ): Promise<Contribution> {
     const url = `${this.baseUrl}/${contributionType}/`;
     const params = challengeId ? { challenge_id: challengeId } : {};
@@ -26,6 +25,7 @@ class ContributionService {
       params: {
         language_id: languageId,
         sample_id: sampleId,
+        sample_text: sample_text,
         ...params
       }
     });
@@ -77,25 +77,6 @@ class ContributionService {
   ): Promise<{ message: string }> {
     const res = await api.patch(
       `${this.baseUrl}/${contributionType}/${contributionId}/flag`
-    );
-    return res.data;
-  }
-
-  // Get user contributions (this endpoint was not in the backend code but would be useful)
-  async getUserContributions(filters?: ContributionFilter): Promise<Contribution[]> {
-    const res = await api.get(`${this.baseUrl}/user/`, { params: filters });
-    return res.data;
-  }
-
-  // Update a contribution (this endpoint was not in the backend code but would be useful)
-  async update(
-    contributionId: string,
-    contributionType: ContributionType,
-    data: ContributionUpdate
-  ): Promise<Contribution> {
-    const res = await api.patch(
-      `${this.baseUrl}/${contributionType}/${contributionId}`,
-      data
     );
     return res.data;
   }

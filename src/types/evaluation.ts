@@ -1,9 +1,16 @@
 import { ContributionType } from './contribution';
+import { 
+  AnnotationContributionRead,
+  TranscriptionContributionRead,
+  TranslationContributionRead
+} from './contribution';
 
 export interface EvaluationStepSubmit {
   eval_decision?: boolean;
   correction_id?: string;
   run_abtest: boolean;
+  abtest_decision?: string;
+
 }
 
 export interface EvaluationInstanceCreate {
@@ -25,6 +32,8 @@ export interface ABTestVoteSubmit {
   language_id?: string;
 }
 
+
+
 export interface EvaluationStep {
   id: string;
   branch_id: string;
@@ -42,15 +51,27 @@ export interface EvaluationStep {
   run_abtest: boolean;
   assigned_at?: string;
 }
-export interface ModifiedEvaluationStep{
+
+
+export type ContributionVariant =
+  | AnnotationContributionRead
+  | TranscriptionContributionRead
+  | TranslationContributionRead;
+
+export interface ModifiedEvaluationStep {
   step_id: string;
   branch_id: string;
   abtest_decision?: 'a' | 'b';
   step_number: number;
   run_ab_test: boolean;
   assigned_at?: string;
-  contributions?: {};
+
+  contributions?: {
+    a_contribution?: ContributionVariant;
+    b_contribution: ContributionVariant;
+  };
 }
+
 
 export interface EvaluationBranch {
   id: string;

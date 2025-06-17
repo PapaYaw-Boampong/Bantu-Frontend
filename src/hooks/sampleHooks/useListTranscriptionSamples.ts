@@ -7,12 +7,14 @@ interface TranscriptionSamplesParams {
   active?: boolean;
   skip?: number;
   limit?: number;
+  buffer?: string;
 }
 
 export function useListTranscriptionSamples({
   languageId,
   category,
   active,
+  buffer,
   skip = 0,
   limit = 3,
 }: TranscriptionSamplesParams = {}) {
@@ -23,6 +25,7 @@ export function useListTranscriptionSamples({
         languageId,
         category,
         active,
+        buffer,
         skip,
         limit
       );

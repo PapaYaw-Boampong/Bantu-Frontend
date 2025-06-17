@@ -18,14 +18,17 @@ class SampleService {
     seedId?: string,
     languageId?: string,
     active?: boolean,
+    buffer?: string,
     skip: number = 0,
-    limit: number = 20
+    limit: number = 5,
+
   ): Promise<PaginatedResponse<TranslationSample>> {
     const params = {
       seed_id: seedId,
       language_id: languageId,
       active,
       skip,
+      buffer,
       limit,
     };
 
@@ -37,8 +40,10 @@ class SampleService {
     languageId?: string,
     category?: string,
     active?: boolean,
+    buffer?: string,
     skip: number = 0,
-    limit: number = 20
+    limit: number = 5,
+    
   ): Promise<PaginatedResponse<TranscriptionSample>> {
     const params = {
       language_id: languageId,
@@ -46,6 +51,7 @@ class SampleService {
       active,
       skip,
       limit,
+      buffer
     };
 
     const res = await api.get(`${this.baseUrl}/transcription/`, { params });
@@ -56,8 +62,10 @@ class SampleService {
     seedId?: string,
     languageId?: string,
     active?: boolean,
+    buffer?: string,
     skip: number = 0,
-    limit: number = 20
+    limit: number = 5,
+    
   ): Promise<PaginatedResponse<AnnotationSample>> {
     const params = {
       seed_id: seedId,
@@ -65,6 +73,7 @@ class SampleService {
       active,
       skip,
       limit,
+      buffer
     };
 
     const res = await api.get(`${this.baseUrl}/annotation/`, { params });
@@ -119,6 +128,73 @@ class SampleService {
     message: string;
   }> {
     const res = await api.delete(`${this.baseUrl}/${sampleType}/${sampleId}`);
+    return res.data;
+  }
+
+  // ======== CSV UPLOAD OPERATIONS ========
+  
+  async uploadAnnotationSeedsCSV(
+    file: File,
+    languageId: string
+  ): Promise<{
+    success: boolean;
+    count: number;
+  }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    const res = await api.post(
+      `${this.baseUrl}/annotation/csv?language_id=${languageId}`, 
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    );
+    return res.data;
+  }
+
+  async uploadTranscriptionSeedsCSV(
+    file: File,
+    languageId: string
+  ): Promise<{
+    success: boolean;
+    count: number;
+  }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    const res = await api.post(
+      `${this.baseUrl}/transcription/csv?language_id=${languageId}`,
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    );
+    return res.data;
+  }
+
+  async uploadTranslationSeedsCSV(
+    file: File
+  ): Promise<{
+    success: boolean;
+    count: number;
+  }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    const res = await api.post(
+      `${this.baseUrl}/translation/csv`,
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    );
     return res.data;
   }
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -28,6 +28,26 @@ const countries = [
   'Senegal',
   'Zimbabwe',
 ];
+
+
+
+const LoadingSpinner = () => {
+  return (
+    <div className="flex flex-col items-center justify-center py-12 gap-3 animate-fade-in">
+      <div className="relative">
+        <Loader2 
+          className="h-8 w-8 text-primary animate-spin ease-[cubic-bezier(0.65,0.05,0.36,1)] duration-1000" 
+          strokeWidth={2.5}
+        />
+        {/* Optional: Add a subtle background circle */}
+        <div className="absolute inset-0 rounded-full border-4 border-primary/10 -m-1"></div>
+      </div>
+      <p className="text-muted-foreground text-sm font-medium animate-pulse">
+        Welcome to the BANTU Project
+      </p>
+    </div>
+  );
+};
 
 export default function Auth() {
   const [authMode, setAuthMode] = useState<AuthMode>('signin');
@@ -70,7 +90,7 @@ export default function Auth() {
   };
 
   if (loading) {
-    return <div>Loading...</div>; // You might want to replace this with a proper loading component
+    <LoadingSpinner />
   }
 
   return (

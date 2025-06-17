@@ -10,27 +10,27 @@ import Layout from '@/components/common/Layout';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 
 // User pages
-import Dashboard from '@/pages/user/Dashboard';
-import LetsTalk from '@/pages/user/LetsTalk';
-import Translation from '@/pages/user/TranslationValidation';
-import Transcription from '@/pages/user/TranscriptionValidation';
-import ModeSelection from '@/pages/user/ModeSelection';
-import Translate from '@/pages/user/Translate';
-import Profile from '@/pages/user/Profile';
-import Contributions from '@/pages/user/Contributions';
+import Dashboard from '@/pages/user/dash/Dashboard';
+import LetsTalk from '@/pages/user/collectionTools/Transcribe';
+import Translation from '@/pages/user/validationTools/TranslationValidation';
+import Transcription from '@/pages/user/validationTools/TranscriptionValidation';
+import ModeSelection from '@/pages/user/collectionTools/ModeSelection';
+import Translate from '@/pages/user/collectionTools/Translate';
+import Profile from '@/pages/user/dash/Profile';
+import Contributions from '@/pages/user/dash/ContributionsStats';
 import API from '@/pages/user/API';
 import Docs from '@/pages/user/Docs';
-import Events from '@/pages/user/Events';
+import Events from '@/pages/user/challenge/Events';
 import Rewards from '@/pages/user/Rewards';
-import Annotate from '@/pages/user/Annotate';
-import Annotation from '@/pages/user/ImageAnnotationValidation';
-import PublicChallenges from '@/pages/user/challenges';
-import MyChallenges from '@/pages/user/my-challenges';
+import Annotate from '@/pages/user/collectionTools/Annotate';
+import Annotation from '@/pages/user/validationTools/ImageAnnotationValidation';
+import PublicChallenges from '@/pages/user/challenge/challenges';
+import MyChallenges from '@/pages/user/challenge/my-challenges';
 import ChallengeDetail from '@/pages/user/challenge/[id]';
-import CreateChallenge from '@/pages/user/create-challenge';
-import UserWork from '@/pages/user/work';
-import Sandbox from '@/pages/user/sandbox';
-import ABTesting from '@/pages/user/ABTestingPage';
+import CreateChallenge from '@/pages/user/challenge/create-challenge';
+import UserWork from '@/pages/user/challenge/work';
+import Sandbox from '@/pages/user/challenge/sandbox';
+import ABTesting from '@/pages/user/validationTools/ABTestingPage';
 
 // Admin pages
 import AdminDashboard from '@/pages/admin/Dashboard';
@@ -43,6 +43,7 @@ import AdminRewards from '@/pages/admin/Rewards';
 import Challenge from '@/pages/admin/Challenge';
 import Languages from '@/pages/admin/Languages';
 import Users from '@/pages/admin/Users';
+import CSVUpload from '@/pages/admin/CSVUpload';
 // import ABTesting from './components/common/ABTesting';
 
 // Initialize React Query
@@ -102,6 +103,7 @@ function App() {
             <Route path="admin/challenge" element={<Challenge />} />
             <Route path="admin/rewards" element={<AdminRewards />} />
             <Route path="admin/languages" element={<Languages />} />
+            <Route path="admin/csvupload" element={<CSVUpload />} />
             <Route path="admin/users" element={<Users />} />
           </Route>
         </Routes>

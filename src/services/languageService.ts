@@ -79,7 +79,11 @@ class LanguageService {
     await api.delete(`/language/userlanguages/${language_id}`);
   }
   
-
+  // Get language-specific statistics
+  async getUserLanguageStats(userLanguageId: string): Promise<any[]> {
+    const response = await api.get(`/language/userlanguages/${userLanguageId}/stats`);
+    return response.data;
+  }
 }
 
 export const languageService = new LanguageService(); 

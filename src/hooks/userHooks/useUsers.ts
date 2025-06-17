@@ -1,65 +1,54 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { userService } from '@/services/userService';
-import { User, UserProfile } from '@/types/user';
-import { toast } from '@/components/ui/use-toast';
+import { User } from '@/types/user';
+import { useToast } from '@/components/ui/use-toast';
 
 export function useUsers() {
-  const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
 
-  const fetchUsers = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await userService.getUsers();
-      setUsers(data);
-    } catch (err: any) {
-      setError(err.message || 'Failed to fetch users');
-      toast({
-        title: 'Error',
-        description: 'Failed to fetch users',
-        variant: 'destructive',
+  const { 
+    data: users = [], 
+    isLoading,
+    isError,
+    error,
+    refetch 
+  } = useQuery({
+    queryKey: ['users'],
+    queryFn: userService.getUsers,
+  });
+
+  const deactivateUserMutation = useMutation({
+    mutationFn: (userId: string) => userService.deactivateUser(userId),
+    onSuccess: (_, userId) => {
+      // Update the users list in the cache
+      queryClient.setQueryData(['users'], (oldData: User[] | undefined) => {
+        if (!oldData) return [];
+        return oldData.map(user => 
+          user.id === userId ? { ...user, is_active: false } : user
+        );
       });
-    } finally {
-      setLoading(false);
-    }
-  }, []);
 
-  const deactivateUser = useCallback(async (userId: string) => {
-    try {
-      setLoading(true);
-      setError(null);
-      await userService.deactivateUser(userId);
-      setUsers(prev => prev.map(user => 
-        user.id === userId ? { ...user, is_active: false } : user
-      ));
       toast({
         title: 'Success',
         description: 'User deactivated successfully',
       });
-    } catch (err: any) {
-      setError(err.message || 'Failed to deactivate user');
+    },
+    onError: (err: any) => {
       toast({
         title: 'Error',
-        description: 'Failed to deactivate user',
+        description: err.message || 'Failed to deactivate user',
         variant: 'destructive',
       });
       throw err;
-    } finally {
-      setLoading(false);
     }
-  }, []);
-
-  useEffect(() => {
-    fetchUsers();
-  }, [fetchUsers]);
+  });
 
   return {
     users,
-    loading,
-    error,
-    fetchUsers,
-    deactivateUser,
+    loading: isLoading,
+    error: isError ? (error as Error).message || 'Failed to fetch users' : null,
+    fetchUsers: refetch,
+    deactivateUser: deactivateUserMutation.mutate,
   };
 } 

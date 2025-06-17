@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Trophy, Award, DollarSign, CheckCircle2, Clock } from "lucide-react";
+import { Plus, Trophy, Award, DollarSign, CheckCircle2, Clock, Loader2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -14,80 +14,160 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-
-// Mock data - replace with actual API calls
-const mockMilestoneAwards = [
-  {
-    id: 1,
-    name: "Transcription Wizard",
-    description: "Awarded for completing 1000 transcriptions",
-    type: "badge",
-    requirements: "1000 transcriptions",
-    status: "active"
-  },
-  {
-    id: 2,
-    name: "Translation Guru",
-    description: "Awarded for completing 500 translations",
-    type: "badge",
-    requirements: "500 translations",
-    status: "active"
-  },
-  {
-    id: 3,
-    name: "Community Champion",
-    description: "Awarded for helping 50 community members",
-    type: "badge",
-    requirements: "50 community helps",
-    status: "draft"
-  }
-];
-
-const mockRewardClaims = [
-  {
-    id: 1,
-    user: "John Doe",
-    challenge: "March Challenge",
-    amount: 50,
-    status: "pending",
-    date: "2024-03-20",
-    paymentDetails: {
-      provider: "MTN",
-      number: "0241234567"
-    }
-  },
-  {
-    id: 2,
-    user: "Jane Smith",
-    challenge: "Weekly Top Contributor",
-    amount: 25,
-    status: "paid",
-    date: "2024-03-15",
-    paymentDetails: {
-      provider: "Vodafone",
-      number: "0207654321"
-    }
-  }
-];
+import { useToast } from "@/components/ui/use-toast";
+import { 
+  useMilestones, 
+  useCreateMilestone, 
+  useUpdateMilestone,
+  usePendingRewardClaims,
+  useProcessRewardClaim
+} from "@/hooks/rewardHooks";
+import { RewardType } from "@/types/rewards";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function Rewards() {
+  const { toast } = useToast();
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [newAward, setNewAward] = useState({
     name: "",
     description: "",
-    type: "badge",
-    requirements: "",
-    status: "draft"
+    reward_type: RewardType.BADGE,
+    reward_value: {},
+    required_actions: 100
   });
 
+  // Fetch milestones
+  const { 
+    data: milestones = [], 
+    isLoading: isMilestonesLoading
+  } = useMilestones();
+
+  // Fetch pending reward claims
+  const {
+    data: rewardClaims = [],
+    isLoading: isClaimsLoading
+  } = usePendingRewardClaims();
+
+  // Mutations
+  const createMilestoneMutation = useCreateMilestone();
+  const processClaimMutation = useProcessRewardClaim();
+
   const handleAddAward = () => {
-    // Implement award addition logic
-    console.log("Adding award:", newAward);
+    if (!newAward.name || !newAward.description) {
+      toast({
+        title: "Missing Information",
+        description: "Please provide both a name and description for the award.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Create milestone data
+    const milestoneData = {
+      name: newAward.name,
+      description: newAward.description,
+      reward_type: newAward.reward_type,
+      reward_value: newAward.reward_value,
+      required_actions: newAward.required_actions
+    };
+
+    createMilestoneMutation.mutate(milestoneData, {
+      onSuccess: () => {
+        toast({
+          title: "Success",
+          description: `Milestone "${newAward.name}" has been created.`,
+        });
+        setNewAward({
+          name: "",
+          description: "",
+          reward_type: RewardType.BADGE,
+          reward_value: {},
+          required_actions: 100
+        });
+        setIsDialogOpen(false);
+      },
+      onError: (error: any) => {
+        toast({
+          title: "Error",
+          description: error.message || "Failed to create milestone.",
+          variant: "destructive",
+        });
+      }
+    });
   };
 
-  const handleProcessClaim = (claimId: number) => {
-    // Implement claim processing logic
-    console.log("Processing claim:", claimId);
+  const handleProcessClaim = (claimId: string, approved: boolean) => {
+    processClaimMutation.mutate(
+      { claimId, approved },
+      {
+        onSuccess: () => {
+          toast({
+            title: "Success",
+            description: `Claim has been ${approved ? 'approved' : 'rejected'}.`,
+          });
+        },
+        onError: (error: any) => {
+          toast({
+            title: "Error",
+            description: error.message || `Failed to ${approved ? 'approve' : 'reject'} claim.`,
+            variant: "destructive",
+          });
+        }
+      }
+    );
   };
+
+  // Show real data with fallback to mock data when empty
+  const displayMilestones = milestones.length > 0 
+    ? milestones
+    : [
+        {
+          id: "1",
+          name: "Transcription Wizard",
+          description: "Awarded for completing 1000 transcriptions",
+          reward_type: RewardType.BADGE,
+          reward_value: { badge_name: "Transcription Wizard" },
+          required_actions: 1000
+        },
+        {
+          id: "2",
+          name: "Translation Guru",
+          description: "Awarded for completing 500 translations",
+          reward_type: RewardType.BADGE,
+          reward_value: { badge_name: "Translation Guru" },
+          required_actions: 500
+        }
+      ];
+
+  // Show real claims with fallback to mock data when empty
+  const displayClaims = rewardClaims.length > 0
+    ? rewardClaims
+    : [
+        {
+          id: "1",
+          user: { fullname: "John Doe" },
+          challenge: { name: "March Challenge" },
+          amount: 50,
+          status: "pending",
+          created_at: "2024-03-20",
+          payment_details: {
+            provider: "MTN",
+            number: "0241234567"
+          }
+        },
+        {
+          id: "2",
+          user: { fullname: "Jane Smith" },
+          challenge: { name: "Weekly Top Contributor" },
+          amount: 25,
+          status: "paid",
+          created_at: "2024-03-15",
+          payment_details: {
+            provider: "Vodafone",
+            number: "0207654321"
+          }
+        }
+      ];
 
   return (
     <div className="container mx-auto py-8">
@@ -111,7 +191,7 @@ export default function Rewards() {
         <TabsContent value="awards" className="space-y-4">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-2xl font-semibold">Milestone Awards</h2>
-            <Dialog>
+            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
                 <Button>
                   <Plus className="mr-2 h-4 w-4" />
@@ -148,22 +228,31 @@ export default function Rewards() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="requirements">Requirements</Label>
+                    <Label htmlFor="requirements">Required Actions</Label>
                     <Input
                       id="requirements"
-                      placeholder="e.g., 1000 transcriptions"
-                      value={newAward.requirements}
+                      type="number"
+                      placeholder="e.g., 1000"
+                      value={newAward.required_actions.toString()}
                       onChange={(e) => setNewAward({
                         ...newAward,
-                        requirements: e.target.value
+                        required_actions: parseInt(e.target.value) || 0
                       })}
                     />
                   </div>
                   <Button 
                     className="w-full"
                     onClick={handleAddAward}
+                    disabled={createMilestoneMutation.isPending}
                   >
-                    Create Award
+                    {createMilestoneMutation.isPending ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Creating...
+                      </>
+                    ) : (
+                      "Create Award"
+                    )}
                   </Button>
                 </div>
               </DialogContent>
@@ -172,36 +261,44 @@ export default function Rewards() {
 
           <Card>
             <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Requirements</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {mockMilestoneAwards.map((award) => (
-                    <TableRow key={award.id}>
-                      <TableCell className="font-medium">{award.name}</TableCell>
-                      <TableCell>{award.description}</TableCell>
-                      <TableCell>{award.requirements}</TableCell>
-                      <TableCell>
-                        <Badge variant={award.status === "active" ? "default" : "secondary"}>
-                          {award.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="sm">
-                          Edit
-                        </Button>
-                      </TableCell>
+              {isMilestonesLoading ? (
+                <div className="p-4 space-y-4">
+                  <Skeleton className="h-12 w-full" />
+                  <Skeleton className="h-12 w-full" />
+                  <Skeleton className="h-12 w-full" />
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead>Requirements</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {displayMilestones.map((award) => (
+                      <TableRow key={award.id}>
+                        <TableCell className="font-medium">{award.name}</TableCell>
+                        <TableCell>{award.description}</TableCell>
+                        <TableCell>{award.required_actions} actions</TableCell>
+                        <TableCell>
+                          <Badge variant={award? "default" : "secondary"}>
+                            {award ? "active" : "draft"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="ghost" size="sm">
+                            Edit
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -209,46 +306,68 @@ export default function Rewards() {
         <TabsContent value="claims" className="space-y-4">
           <Card>
             <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>User</TableHead>
-                    <TableHead>Challenge</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Payment Details</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {mockRewardClaims.map((claim) => (
-                    <TableRow key={claim.id}>
-                      <TableCell className="font-medium">{claim.user}</TableCell>
-                      <TableCell>{claim.challenge}</TableCell>
-                      <TableCell>${claim.amount}</TableCell>
-                      <TableCell>
-                        {claim.paymentDetails.provider}: {claim.paymentDetails.number}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={claim.status === "paid" ? "default" : "secondary"}>
-                          {claim.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {claim.status === "pending" && (
-                          <Button 
-                            variant="ghost" 
-                            size="sm"
-                            onClick={() => handleProcessClaim(claim.id)}
-                          >
-                            Process
-                          </Button>
-                        )}
-                      </TableCell>
+              {isClaimsLoading ? (
+                <div className="p-4 space-y-4">
+                  <Skeleton className="h-12 w-full" />
+                  <Skeleton className="h-12 w-full" />
+                  <Skeleton className="h-12 w-full" />
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>User</TableHead>
+                      <TableHead>Challenge</TableHead>
+                      <TableHead>Amount</TableHead>
+                      <TableHead>Payment Details</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {displayClaims.map((claim) => (
+                      <TableRow key={claim.id}>
+                        <TableCell className="font-medium">{claim.user?.fullname || claim.user}</TableCell>
+                        <TableCell>{claim.challenge?.name || claim.challenge}</TableCell>
+                        <TableCell>${claim.amount}</TableCell>
+                        <TableCell>
+                          {claim.payment_details?.provider}: {claim.payment_details?.number}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={claim.status === "paid" ? "default" : "secondary"}>
+                            {claim.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {claim.status === "pending" && (
+                            <div className="flex gap-2 justify-end">
+                              <Button 
+                                variant="ghost" 
+                                size="sm"
+                                onClick={() => handleProcessClaim(claim.id, true)}
+                                disabled={processClaimMutation.isPending}
+                              >
+                                {processClaimMutation.isPending ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : "Approve"}
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="sm"
+                                className="text-destructive"
+                                onClick={() => handleProcessClaim(claim.id, false)}
+                                disabled={processClaimMutation.isPending}
+                              >
+                                Reject
+                              </Button>
+                            </div>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

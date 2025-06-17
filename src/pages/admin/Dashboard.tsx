@@ -24,7 +24,7 @@ export default function AdminDashboardPage() {
         </TabsList>
         
         <TabsContent value="overview" className="space-y-4">
-          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
             <Card className="animate-fade-up [animation-delay:200ms] opacity-0">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">
@@ -55,7 +55,7 @@ export default function AdminDashboardPage() {
               </CardContent>
             </Card>
             
-            <Card className="animate-fade-up [animation-delay:400ms] opacity-0">
+            {/* <Card className="animate-fade-up [animation-delay:400ms] opacity-0">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">
                   Model Accuracy
@@ -69,7 +69,7 @@ export default function AdminDashboardPage() {
                 </p>
               </CardContent>
             </Card>
-            
+             */}
             <Card className="animate-fade-up [animation-delay:500ms] opacity-0">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">

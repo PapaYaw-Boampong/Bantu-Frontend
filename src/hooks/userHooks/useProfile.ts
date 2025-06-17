@@ -1,11 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { userService } from '@/services/userService';
 import { languageService } from '@/services/languageService';
 
 import { 
   UserProfile, 
   UserUpdate,
-  // UpdateLanguageRequest,
 } from '@/types/user';
 
 import { 
@@ -15,91 +14,63 @@ import {
 } from '@/types/language';
  
 export function useProfile() {
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [languages, setLanguages] = useState<Language[]>([]);
-  const [userLanguages, setUserLanguages] = useState<UserLanguage[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
-  // Fetch initial data
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        const [profileData, languagesData, userLanguagesData] = await Promise.all([
-          userService.getProfile(),
-          languageService.getLanguages(),
-          languageService.getUserLanguages()
-        ]);
-        setProfile(profileData);
-        setLanguages(languagesData);
-        setUserLanguages(userLanguagesData);
-      } catch (err: any) {
-        setError(err.response?.data?.detail || 'Failed to fetch profile data');
-      } finally {
-        setLoading(false);
-      }
-    };
+  // Fetch user profile data
+  const { 
+    data: profile,
+    isLoading: profileLoading,
+    isError: profileError,
+    error: profileErrorData
+  } = useQuery({
+    queryKey: ['profile'],
+    queryFn: userService.getProfile,
+  });
 
-    fetchData();
-  }, []);
+  // Fetch languages data
+  const { 
+    data: languages = [],
+    isLoading: languagesLoading, 
+  } = useQuery({
+    queryKey: ['languages'],
+    queryFn: languageService.getLanguages,
+  });
 
-  // Update profile
-  const updateProfile = async (data: UserUpdate) => {
-    try {
-      setError(null);
-      const updatedProfile = await userService.updateProfile(data);
-      setProfile(updatedProfile);
-      return updatedProfile;
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to update profile');
-      throw err;
-    }
-  };
+  // Fetch user languages
+  const { 
+    data: userLanguages = [],
+    isLoading: userLanguagesLoading,
+    refetch: refetchUserLanguages,
+  } = useQuery({
+    queryKey: ['userLanguages'],
+    queryFn: languageService.getUserLanguages,
+  });
 
-  // Add language association
-  const addLanguage = async (data: AddLanguageRequest) => {
-    try {
-      setError(null);
-      const newLanguage = await languageService.addUserLanguage(data);
-      setUserLanguages(prev => [...prev, newLanguage]);
-      return newLanguage;
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to add language');
-      throw err;
-    }
-  };
+  // Update profile mutation
+  const updateProfileMutation = useMutation({
+    mutationFn: (data: UserUpdate) => userService.updateProfile(data),
+    onSuccess: (updatedProfile) => {
+      queryClient.setQueryData(['profile'], updatedProfile);
+    },
+  });
 
-  // Update language
-  // const updateLanguage = async (languageId: string, data: UpdateLanguageRequest) => {
-  //   try {
-  //     setError(null);
-  //     const updatedLanguage = await userService.updateLanguage(languageId, data);
-  //     setUserLanguages(prev => 
-  //       prev.map(lang => 
-  //         lang.language.id === languageId ? updatedLanguage : lang
-  //       )
-  //     );
-  //     return updatedLanguage;
-  //   } catch (err: any) {
-  //     setError(err.response?.data?.detail || 'Failed to update language');
-  //     throw err;
-  //   }
-  // };
+  // Add language mutation
+  const addLanguageMutation = useMutation({
+    mutationFn: (data: AddLanguageRequest) => languageService.addUserLanguage(data),
+    onSuccess: (newLanguage) => {
+      queryClient.setQueryData(['userLanguages'], (old: UserLanguage[] = []) => [...old, newLanguage]);
+    },
+  });
 
-  // Remove language
-  const removeLanguage = async (languageId: string) => {
-    try {
-      setError(null);
-      await languageService.removeUserLanguage(languageId);
-      setUserLanguages(prev => 
-        prev.filter(lang => lang.association_id !== languageId)
+  // Remove language mutation
+  const removeLanguageMutation = useMutation({
+    mutationFn: (languageId: string) => languageService.removeUserLanguage(languageId),
+    onSuccess: (_, languageId) => {
+      queryClient.setQueryData(['userLanguages'], (old: UserLanguage[] = []) => 
+        old.filter(lang => lang.association_id !== languageId)
       );
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to remove language');
-      throw err;
-    }
-  };
+    },
+  });
 
   // Get available languages (languages not yet added by user)
   const getAvailableLanguages = () => {
@@ -111,13 +82,11 @@ export function useProfile() {
     profile,
     languages,
     userLanguages,
-    loading,
-    error,
-    updateProfile,
-    addLanguage,
-    // updateLanguage,
-    removeLanguage,
+    loading: profileLoading || languagesLoading || userLanguagesLoading,
+    error: profileError ? (profileErrorData as Error).message || 'Failed to fetch profile data' : null,
+    updateProfile: updateProfileMutation.mutate,
+    addLanguage: addLanguageMutation.mutate,
+    removeLanguage: removeLanguageMutation.mutate,
     getAvailableLanguages,
   };
-
 }

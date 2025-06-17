@@ -1,11 +1,7 @@
 import api from '@/lib/api';
 import { 
   EvaluationStepSubmit,
-  EvaluationInstanceCreate,
   ABTestVoteSubmit,
-  EvaluationInstance,
-  EvaluationBranch,
-  EvaluationStep,
   ABTest,
   ABTestAssignment,
   EvaluationAssignment
@@ -55,12 +51,14 @@ class EvaluationService {
 
   // Assign A/B test to user
   async assignABTest(
-    proficiencyLevel: number = 1,
+    proficiencyLevel: number = 3,
+    batch_size: number = 3,
     abTestId?: string
-  ): Promise<ABTestAssignment> {
+  ): Promise<[ABTestAssignment]> {
     const params = {
       ab_test_id: abTestId,
-      user_proficiency: proficiencyLevel
+      user_proficiency: proficiencyLevel,
+      batch_size: batch_size
     };
     
     const res = await api.get(`${this.baseUrl}/abtest/assign`, { params });

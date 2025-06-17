@@ -1,10 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import { ThumbsUp, Divide, Flag, Play, Pause, Volume2, Loader2 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
-import { useAssignABTest } from '@/hooks/evaluationHooks/useAssignABTest';
+import { useAssignABTests } from '@/hooks/evaluationHooks/useAssignABTest';
 import { useCastABTestVote } from '@/hooks/evaluationHooks/useCastABTestVote';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { UserLanguage } from '@/types/language';
+import { mapProficiencyToNumber } from "@/utils/validationUtil";
+
 import {
   Card,
   CardContent,
@@ -31,28 +34,22 @@ import {
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
 import { ABTestAssignment } from '@/types/evaluation';
+import { getFileUrl } from '@/utils/tempStorageService';
 
 export type ContributionType = 'translation' | 'transcription' | 'annotation';
-
-interface Contribution {
-  id: string;
-  content: string;
-  // For annotations, we may need to store image URL or other data
-  imageUrl?: string;
-  audioUrl?: string;
-  sourceContent?: string;
-}
 
 interface ABTestingProps {
   taskType: ContributionType;
   language: string;
   languageId: string;
   className?: string;
-  // New props for validation integration
+
+  //validation integration
   externalTest?: ABTestAssignment | null;
   validationMode?: boolean;
   onVoteSubmitted?: (selection: 'A' | 'B' | 'same' | null) => void;
   sourceContent?: string;
+  userlanguages?: UserLanguage[]
 }
 
 export default function ABTesting({
@@ -63,27 +60,35 @@ export default function ABTesting({
   externalTest = null,
   validationMode = false,
   onVoteSubmitted,
-  sourceContent
+  sourceContent,
+  userlanguages
 }: ABTestingProps) {
+  // State management
   const [selected, setSelected] = useState<'A' | 'B' | 'same' | null>(null);
   const [showFlagDialog, setShowFlagDialog] = useState(false);
   const [flagReason, setFlagReason] = useState('');
   const [flagNote, setFlagNote] = useState('');
   const [playingAudio, setPlayingAudio] = useState<'A' | 'B' | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
   const [currentTest, setCurrentTest] = useState<ABTestAssignment | null>(null);
   const [testBuffer, setTestBuffer] = useState<ABTestAssignment[]>([]);
   const [hasStarted, setHasStarted] = useState(false);
+
   const [simplifiedMode, setSimplifiedMode] = useState(false);
-  
+
+  // Buffering Config
+  const [bufferLoading, setBufferLoading] = useState(false);
+  const bufferSize = 3; // Number of tests to keep in buffer
+  const bufferThreshold = 1; // When to trigger refill
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   // Audio refs for transcription mode
   const audioRefA = useRef<HTMLAudioElement>(null);
   const audioRefB = useRef<HTMLAudioElement>(null);
-  
+
   const { toast } = useToast();
-  
   // Hooks for AB Test functionality
-  const assignABTest = useAssignABTest();
+  const assignABTest = useAssignABTests();
   const castABTestVote = useCastABTestVote();
 
   // If external test is provided, use it
@@ -92,8 +97,35 @@ export default function ABTesting({
       setCurrentTest(externalTest);
       setHasStarted(true);
       setSimplifiedMode(validationMode);
+      return;
     }
+    if (!validationMode) {
+      setTestBuffer([]);
+      setCurrentTest(null);
+    }
+
   }, [externalTest, validationMode]);
+
+  // Handle language/task changes
+  useEffect(() => {
+    if (validationMode || !languageId || !taskType) return;
+
+    const needsRefill = testBuffer.length <= bufferThreshold;
+    const isEmpty = testBuffer.length === 0;
+
+    if (needsRefill || isEmpty) {
+      loadABTests();
+    }
+  }, [languageId, taskType, testBuffer.length, validationMode]);
+
+  const getProficiency = (languageId: string): string | undefined => {
+    if (userlanguages) {
+      const match = userlanguages.find((lang) => lang.language.id === languageId);
+      return match?.proficiency;
+    }
+    return 'beginner'
+
+  };
 
   const startTesting = () => {
     if (!languageId || !taskType) {
@@ -104,58 +136,43 @@ export default function ABTesting({
       });
       return;
     }
-    
     setHasStarted(true);
-    if (!validationMode) {
-      loadABTests();
-    }
   };
-  
-  const loadABTests = () => {
+
+  const loadABTests = async () => {
     if (!languageId || !taskType) return;
-    
-    setIsLoading(true);
-    
+
+    setBufferLoading(true);
+
     // Load 3 AB tests at once
-    const fetchTests = async () => {
-      try {
-        const results: ABTestAssignment[] = [];
-        for (let i = 0; i < 3; i++) {
-          const result = await assignABTest.mutateAsync({
-            userId: 'current',
-            proficiencyLevel: 1
-          });
-          if (result) {
-            results.push(result);
-          }
-        }
-        
-        if (results.length > 0) {
-          // Store tests in buffer
-          setTestBuffer(results);
-          
-          // Set the first test as current
-          setCurrentTest(results[0]);
-        } else {
-          toast({
-            title: "No AB tests available",
-            description: "There are no AB tests available for this language right now.",
-            variant: "destructive",
-          });
-        }
-      } catch (error) {
-        console.error("Error assigning AB tests:", error);
+    try {
+      const results = await assignABTest.mutateAsync({
+        proficiencyLevel: mapProficiencyToNumber(
+          getProficiency(languageId) || "beginner"
+        )
+      });
+
+      if (results.length > 0) {
+        setTestBuffer(prev => [...prev, ...results]);
+        if (!currentTest) setCurrentTest(results[0]);
+
+      } else if (testBuffer.length === 0) {
         toast({
-          title: "Error",
-          description: "Failed to load AB tests. Please try again.",
+          title: "No AB tests available",
+          description: "There are no AB tests available for this language right now.",
           variant: "destructive",
         });
-      } finally {
-        setIsLoading(false);
       }
-    };
-    
-    fetchTests();
+    } catch (error) {
+      console.error("Error assigning AB tests:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load AB tests. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setBufferLoading(false);
+    }
   };
 
   const handleSubmit = () => {
@@ -167,7 +184,7 @@ export default function ABTesting({
       });
       return;
     }
-    
+
     if (!currentTest) {
       toast({
         title: "No test available",
@@ -176,27 +193,21 @@ export default function ABTesting({
       });
       return;
     }
-    
-    setIsLoading(true);
-    
+
+    setIsSubmitting(true);
+
     // If in validation mode, just return the result to parent
     if (validationMode && onVoteSubmitted) {
       onVoteSubmitted(selected);
-      setIsLoading(false);
+      // setIsLoading(false);
       return;
     }
-    
+
     // Determine which contribution IDs to select based on user choice
-    let selectedIds: string[] = [];
-    
-    if (selected === 'A') {
-      selectedIds = [currentTest.option_a.id];
-    } else if (selected === 'B') {
-      selectedIds = [currentTest.option_b.id];
-    } else if (selected === 'same') {
-      selectedIds = [currentTest.option_a.id, currentTest.option_b.id];
-    }
-    
+    const selectedIds = selected === 'A' ? [currentTest.option_a.id] :
+      selected === 'B' ? [currentTest.option_b.id] :
+        [currentTest.option_a.id, currentTest.option_b.id];
+
     castABTestVote.mutate({
       pairId: currentTest.pair_id,
       data: {
@@ -205,7 +216,7 @@ export default function ABTesting({
         language_id: languageId
       }
     }, {
-      onSuccess: (result) => {
+      onSuccess: () => {
         toast({
           title: "Vote submitted",
           description: "Your evaluation has been recorded. Thank you!",
@@ -219,13 +230,15 @@ export default function ABTesting({
           description: "Failed to submit your vote. Please try again.",
           variant: "destructive",
         });
-        setIsLoading(false);
+      },
+      onSettled: () => {
+        setIsSubmitting(false); // Reset submitting state
       }
     });
   };
 
   const handleFlag = () => {
-    if (!flagReason) {
+    if (!flagReason || !currentTest) {
       toast({
         title: "Reason required",
         description: "Please select a reason for flagging.",
@@ -233,121 +246,90 @@ export default function ABTesting({
       });
       return;
     }
-    
+
     if (!currentTest) {
       return;
     }
-    
-    // Handle flagging by not selecting any contribution
-    castABTestVote.mutate({
-      pairId: currentTest.pair_id,
-      data: {
-        selected_contribution_ids: [],
-        contribution_type: taskType,
-        language_id: languageId
-      }
-    }, {
-      onSuccess: () => {
-        toast({
-          title: "Content flagged",
-          description: "Thank you for your feedback.",
-        });
-        setShowFlagDialog(false);
-        setFlagReason('');
-        setFlagNote('');
-        moveToNextTest();
-      },
-      onError: (error) => {
-        console.error("Error flagging content:", error);
-        toast({
-          title: "Error",
-          description: "Failed to submit your flag. Please try again.",
-          variant: "destructive",
-        });
-        setShowFlagDialog(false);
-      }
-    });
-  };
-  
-  const moveToNextTest = () => {
-    // Remove the current test from the buffer
-    const updatedBuffer = [...testBuffer];
-    updatedBuffer.shift();
-    setTestBuffer(updatedBuffer);
-    
-    // Reset selection state
-    setSelected(null);
-    setPlayingAudio(null);
-    
-    // If buffer is getting low (1 or 0 items left), fetch more tests
-    if (updatedBuffer.length <= 1) {
-      fetchMoreTests();
-    }
-    
-    // If there are still tests in the buffer, move to the next one
-    if (updatedBuffer.length > 0) {
-      setCurrentTest(updatedBuffer[0]);
-      setIsLoading(false);
-    } else {
-      setCurrentTest(null);
-      setIsLoading(false);
-    }
-  };
-  
-  const fetchMoreTests = () => {
-    if (!languageId || !taskType) return;
-    
-    const fetchTests = async () => {
-      try {
-        const results: ABTestAssignment[] = [];
-        for (let i = 0; i < 2; i++) {
-          const result = await assignABTest.mutateAsync({
-            userId: 'current',
-            proficiencyLevel: 1
+
+    // // Handle flagging by not selecting any contribution
+    // castABTestVote.mutate({
+    //   pairId: currentTest.pair_id,
+    //   data: {
+    //     selected_contribution_ids: [],
+    //     contribution_type: taskType,
+    //     language_id: languageId
+    //   }
+    // }, {
+    //   onSuccess: () => {
+    //     toast({
+    //       title: "Content flagged",
+    //       description: "Thank you for your feedback.",
+    //     });
+    //     setShowFlagDialog(false);
+    //     setFlagReason('');
+    //     setFlagNote('');
+    //     moveToNextTest();
+    //   },
+    //   onError: (error) => {
+    //     console.error("Error flagging content:", error);
+    //     toast({
+    //       title: "Error",
+    //       description: "Failed to submit your flag. Please try again.",
+    //       variant: "destructive",
+    //     });
+    //     setShowFlagDialog(false);
+    //   }
+    // });
+    toast({
+            title: "Content flagged",
+            description: "Thank you for your feedback.",
           });
-          if (result) {
-            results.push(result);
-          }
-        }
-        
-        if (results.length > 0) {
-          // Add new tests to the buffer
-          setTestBuffer(prevBuffer => [...prevBuffer, ...results]);
-        }
-      } catch (error) {
-        console.error("Error fetching more AB tests:", error);
-      }
-    };
-    
-    fetchTests();
   };
 
-  const handlePlayAudio = (option: 'A' | 'B') => {
-    if (option === 'A') {
-      if (playingAudio === 'A') {
-        // Pause if already playing
-        audioRefA.current?.pause();
-        setPlayingAudio(null);
-      } else {
-        // Pause other audio if playing
-        audioRefB.current?.pause();
-        // Play this audio
-        audioRefA.current?.play();
-        setPlayingAudio('A');
-      }
-    } else {
-      if (playingAudio === 'B') {
-        // Pause if already playing
-        audioRefB.current?.pause();
-        setPlayingAudio(null);
-      } else {
-        // Pause other audio if playing
-        audioRefA.current?.pause();
-        // Play this audio
-        audioRefB.current?.play();
-        setPlayingAudio('B');
-      }
+  const moveToNextTest = () => {
+    const newBuffer = [...testBuffer];
+    newBuffer.shift();
+    setTestBuffer(newBuffer);
+    setSelected(null);
+    setPlayingAudio(null);
+
+    if (newBuffer.length <= bufferThreshold && !validationMode) {
+      loadABTests();
     }
+
+    setCurrentTest(newBuffer[0] || null);
+  };
+
+
+  const handlePlayAudio = (option: 'A' | 'B') => {
+    if (!currentTest) return;
+
+    const audioRef = option === 'A' ? audioRefA : audioRefB;
+
+    // If this option is already playing, pause it
+    if (playingAudio === option) {
+      audioRef.current?.pause();
+      setPlayingAudio(null);
+      return;
+    }
+
+    // If the other option is playing, pause it
+    if (playingAudio) {
+      const otherRef = playingAudio === 'A' ? audioRefB : audioRefA;
+      otherRef.current?.pause();
+    }
+
+    // Get the audio URL using the temporary storage service
+    const audioUrl = getFileUrl(currentTest[option === 'A' ? 'option_a' : 'option_b'].content, 'audio');
+
+    // Set the audio source if it's not already set
+    if (audioRef.current && audioRef.current.src !== audioUrl) {
+      audioRef.current.src = audioUrl;
+    }
+
+    // Play this option
+    audioRef.current?.play();
+    setPlayingAudio(option);
   };
 
   // Handle audio ending
@@ -357,11 +339,9 @@ export default function ABTesting({
 
   const renderContent = (option: 'A' | 'B') => {
     if (!currentTest) return null;
-    
-    const contribution = option === 'A' ? 
-      { id: currentTest.option_a.id, content: currentTest.option_a.content } : 
-      { id: currentTest.option_b.id, content: currentTest.option_b.content };
-    
+
+    const contribution = option === 'A' ? currentTest.option_a : currentTest.option_b;
+
     switch (taskType) {
       case 'translation':
         return (
@@ -370,6 +350,8 @@ export default function ABTesting({
           </div>
         );
       case 'transcription':
+        const audioUrl = contribution.content
+
         return (
           <div className="p-4 rounded-md bg-muted h-full">
             <div className="flex flex-col space-y-4">
@@ -391,14 +373,14 @@ export default function ABTesting({
                   )}
                 </Button>
                 <div className="text-sm font-medium">Audio Sample {option}</div>
-                <audio 
+                <audio
                   ref={option === 'A' ? audioRefA : audioRefB}
-                  src={currentTest[option === 'A' ? 'option_a' : 'option_b'].content} 
+                  src={audioUrl}
                   onEnded={handleAudioEnded}
                   className="hidden"
                 />
               </div>
-              
+
               {/* Audio Visualization (placeholder) */}
               <div className="w-full h-12 bg-muted-foreground/20 rounded-md flex items-center justify-center">
                 <Volume2 className="h-4 w-4 text-muted-foreground" />
@@ -410,24 +392,23 @@ export default function ABTesting({
         // Parse content for annotation to extract image URL if available
         let imageUrl = '';
         let textContent = contribution.content;
-        
+
         try {
           const contentData = JSON.parse(contribution.content);
           if (contentData.imageUrl) {
             imageUrl = contentData.imageUrl;
-            textContent = contentData.text || contribution.content;
+            textContent = contribution.content;
           }
         } catch (e) {
           // If parsing fails, use the content as is
         }
-        
         return (
           <div className="space-y-4">
             {imageUrl && (
               <div className="w-full h-48 bg-muted flex items-center justify-center rounded-md overflow-hidden">
-                <img 
-                  src={imageUrl} 
-                  alt="Annotation content" 
+                <img
+                  src={imageUrl}
+                  alt="Annotation content"
                   className="w-full h-full object-contain"
                 />
               </div>
@@ -449,7 +430,11 @@ export default function ABTesting({
           <span>Compare Contributions</span>
           <Dialog open={showFlagDialog} onOpenChange={setShowFlagDialog}>
             <DialogTrigger asChild>
-              <Button variant="outline" size="sm" className="text-destructive w-full sm:w-auto" disabled={!hasStarted || !currentTest}>
+              <Button 
+              variant="outline" 
+              size="sm" 
+              className="text-destructive w-full sm:w-auto" 
+              disabled={!hasStarted || !currentTest || isSubmitting}>
                 <Flag className="h-4 w-4 mr-2" />
                 Flag Issues
               </Button>
@@ -494,7 +479,7 @@ export default function ABTesting({
           </Dialog>
         </CardTitle>
       </CardHeader>
-      
+
       <CardContent className="space-y-6">
         {!languageId || !taskType ? (
           <div className="flex flex-col items-center justify-center py-12">
@@ -508,7 +493,7 @@ export default function ABTesting({
               Start A/B Testing
             </Button>
           </div>
-        ) : isLoading ? (
+        ) : bufferLoading && testBuffer.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12">
             <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
             <p className="text-muted-foreground">Loading comparison tasks...</p>
@@ -538,7 +523,7 @@ export default function ABTesting({
                 </div>
               </div>
             )}
-            
+
             {/* Contributions side by side with vs divider */}
             <div className="grid grid-cols-1 md:grid-cols-5 gap-8">
               {/* Option A */}
@@ -560,7 +545,7 @@ export default function ABTesting({
                 </div>
                 {renderContent('A')}
               </div>
-              
+
               {/* VS Divider */}
               <div className="md:col-span-1 flex flex-row md:flex-col items-center justify-center">
                 <div className="hidden md:flex h-full items-center">
@@ -577,7 +562,7 @@ export default function ABTesting({
                   <Separator className="my-4" />
                 </div>
               </div>
-              
+
               {/* Option B */}
               <div className="md:col-span-2">
                 <div className="flex items-center justify-between mb-4">
@@ -601,35 +586,35 @@ export default function ABTesting({
           </>
         )}
       </CardContent>
-      
+
       <CardFooter className="flex flex-col sm:flex-row justify-between pt-10 gap-4">
         {!simplifiedMode && (
           <Button
             variant={selected === 'same' ? 'default' : 'outline'}
             onClick={() => setSelected('same')}
             className="w-full sm:w-auto"
-            disabled={isLoading || !currentTest || !hasStarted}
+            disabled={!currentTest || !hasStarted || isSubmitting}
           >
             <Divide className="h-4 w-4 mr-2" />
             Equally Good
           </Button>
         )}
-        
+
         <div className="flex items-center gap-3">
           {testBuffer.length > 0 && !validationMode && (
             <span className="text-sm text-muted-foreground">
               {testBuffer.length} test{testBuffer.length !== 1 ? "s" : ""} left
             </span>
           )}
-          <Button 
+          <Button
             onClick={handleSubmit}
             className="w-full sm:w-auto"
-            disabled={isLoading || !currentTest || !selected || !hasStarted}
+            disabled={!currentTest || !selected || !hasStarted || isSubmitting}
           >
-            {isLoading ? (
+            {isSubmitting ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Loading...
+                Submitting...
               </>
             ) : "Submit Evaluation"}
           </Button>
@@ -640,4 +625,4 @@ export default function ABTesting({
 }
 
 // Add static properties to the component
-ABTesting.setTest = (test: ABTestAssignment, simplified = false) => {}; 
+ABTesting.setTest = (test: ABTestAssignment, simplified = false) => { }; 

@@ -7,12 +7,14 @@ interface TranslationSamplesParams {
   active?: boolean;
   skip?: number;
   limit?: number;
+  buffer?: string;
 }
 
 export function useListTranslationSamples({
   seedId,
   languageId,
   active,
+  buffer,
   skip = 0,
   limit = 3,
 }: TranslationSamplesParams = {}) {
@@ -23,6 +25,7 @@ export function useListTranslationSamples({
         seedId,
         languageId,
         active,
+        buffer,
         skip,
         limit
       );

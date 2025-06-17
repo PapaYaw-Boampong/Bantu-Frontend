@@ -17,14 +17,25 @@ class UserService {
     return response.data;
   }
 
+  // User Statistics
+  async getUserStats(): Promise<any> {
+    const response = await api.get('/user/stats');
+    return response.data;
+  }
+
   // Admin Methods
   async getUsers(): Promise<User[]> {
-    const response = await api.get('/user');
+    const response = await api.get('/user/users');
     return response.data;
   }
 
   async getUserById(userId: string): Promise<UserProfile> {
     const response = await api.get(`/user/${userId}`);
+    return response.data;
+  }
+
+  async getUserStatsById(userId: string): Promise<any> {
+    const response = await api.get(`/user/${userId}/stats`);
     return response.data;
   }
 
